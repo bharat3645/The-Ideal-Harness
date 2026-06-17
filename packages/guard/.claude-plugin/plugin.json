@@ -1,0 +1,8 @@
+{
+  "name": "ideal-harness-guard",
+  "version": "0.1.0",
+  "description": "Enforcement floor below the LLM: deny-wins policy, permission defaults, injection defense, secret redaction, skill vetting, drift-guard.",
+  "author": {
+    "name": "Bharat"
+  }
+}

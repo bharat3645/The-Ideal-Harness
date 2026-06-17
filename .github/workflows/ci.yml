@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm biome
+      - run: pnpm build
+      - run: pnpm check
+      - run: pnpm test
+      # Dogfood the substrate: validate every manifest + skill frontmatter.
+      - run: node packages/core/dist/cli/index.js validate .
+      # Skill threat self-scan: every SKILL.md must pass the guard vetting gate.
+      - run: |
+          set -e
+          for f in $(find packages -name SKILL.md); do
+            echo "vetting $f"
+            node packages/guard/dist/cli/index.js vet "$f" > /dev/null
+          done

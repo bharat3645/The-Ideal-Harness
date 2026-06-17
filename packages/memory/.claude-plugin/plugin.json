@@ -1,0 +1,8 @@
+{
+  "name": "ideal-harness-memory",
+  "version": "0.1.0",
+  "description": "Structural code-graph with token-budgeted subgraph retrieval + episodic memory with BM25 relevance ranking and a reconciling curator.",
+  "author": {
+    "name": "Bharat"
+  }
+}
