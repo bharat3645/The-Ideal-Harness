@@ -9,3 +9,6 @@ coverage/
 .env
 .env.*
 !.env.example
+
+# Per-project memory store (project-local by design; never committed).
+.ideal-harness/

@@ -4,5 +4,11 @@
   "description": "Deterministic, cache-safe tool_result compression with a Compress-Cache-Retrieve store and a terse output mode.",
   "author": {
     "name": "Bharat"
+  },
+  "mcpServers": {
+    "ideal-harness-compress": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli/index.js", "mcp"]
+    }
   }
 }

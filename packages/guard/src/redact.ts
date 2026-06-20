@@ -24,7 +24,7 @@ export const SECRET_PATTERNS: readonly RedactionPattern[] = [
   { type: 'slack-token', pattern: /\bxox[baprs]-[A-Za-z0-9-]{10,}/g },
   { type: 'google-key', pattern: /\bAIza[A-Za-z0-9_-]{35}\b/g },
   { type: 'jwt', pattern: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g },
-  { type: 'bearer', pattern: /\bBearer\s+[A-Za-z0-9._-]{20,}/g },
+  { type: 'bearer', pattern: /\bBearer\s+[A-Za-z0-9._-]{20,}/gi },
 ];
 
 export interface RedactionResult {

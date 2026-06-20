@@ -36,3 +36,31 @@ test('marketplace manifest flags duplicate plugin names and missing source', () 
 test('marketplace manifest must have a plugins array', () => {
   assert.equal(validateMarketplaceManifest({ name: 'm' }).ok, false);
 });
+
+test('marketplace accepts object sources (npm/github) and rejects malformed ones', () => {
+  const ok = validateMarketplaceManifest({
+    name: 'm',
+    plugins: [
+      { name: 'a', source: { source: 'npm', package: '@scope/a' } },
+      { name: 'b', source: { source: 'github', repo: 'owner/b' } },
+      { name: 'c', source: './c' },
+    ],
+  });
+  assert.equal(ok.ok, true, JSON.stringify(ok.issues));
+
+  // npm source missing its required `package`
+  const badNpm = validateMarketplaceManifest({
+    name: 'm',
+    plugins: [{ name: 'a', source: { source: 'npm' } }],
+  });
+  assert.equal(badNpm.ok, false);
+  assert.ok(badNpm.issues.some((i) => /package/.test(i.message)));
+
+  // unknown source kind
+  const badKind = validateMarketplaceManifest({
+    name: 'm',
+    plugins: [{ name: 'a', source: { source: 'ftp', url: 'x' } }],
+  });
+  assert.equal(badKind.ok, false);
+  assert.ok(badKind.issues.some((i) => /unknown source kind/.test(i.message)));
+});

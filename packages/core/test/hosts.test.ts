@@ -35,3 +35,19 @@ test('isHost guards the union', () => {
   assert.equal(isHost('claude'), true);
   assert.equal(isHost('nope'), false);
 });
+
+test('non-object metadata is preserved verbatim, never corrupted into an object', () => {
+  // An array metadata must NOT be spread into {0:..,1:..,host}.
+  const tmpl = ['---', 'name: demo', 'description: d', 'metadata: [1, 2, 3]', '---', '', 'b'].join('\n');
+  const parsed = parseSkill(tmpl);
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) {
+    return;
+  }
+  const reparsed = parseSkill(renderSkillForHost(parsed.value, 'claude'));
+  assert.equal(reparsed.ok, true);
+  if (!reparsed.ok) {
+    return;
+  }
+  assert.deepEqual(reparsed.value.data.metadata, [1, 2, 3]);
+});

@@ -16,17 +16,30 @@ export interface Observation {
   readonly type: ObservationType;
   readonly text: string;
   readonly tags?: readonly string[];
+  /** Workspace namespace this record belongs to (isolation defence-in-depth). */
+  readonly workspace?: string;
 }
 
 const VALID_TYPES = new Set<ObservationType>(['bugfix', 'feature', 'decision', 'security_alert', 'note']);
 
+/**
+ * Episodic store bound to a single workspace. Every record it creates is stamped
+ * with that workspace key, so a persisted/loaded store can be filtered down to
+ * exactly its workspace — a misplaced or merged DB cannot leak foreign records.
+ */
 export class EpisodicStore {
   private readonly observations: Observation[] = [];
   private counter = 0;
 
-  add(observation: Omit<Observation, 'id'> & { id?: string }): Observation {
+  constructor(private readonly workspaceKey: string = 'default') {}
+
+  add(observation: Omit<Observation, 'id' | 'workspace'> & { id?: string }): Observation {
     this.counter += 1;
-    const record: Observation = { ...observation, id: observation.id ?? `obs-${this.counter}` };
+    const record: Observation = {
+      ...observation,
+      id: observation.id ?? `obs-${this.counter}`,
+      workspace: this.workspaceKey,
+    };
     this.observations.push(record);
     return record;
   }
@@ -38,6 +51,14 @@ export class EpisodicStore {
   toJSON(): readonly Observation[] {
     return this.observations;
   }
+}
+
+/**
+ * Defence-in-depth: keep only records that belong to `key`. Used when loading a
+ * persisted store so a misplaced/merged DB cannot surface another workspace's data.
+ */
+export function filterByWorkspace(observations: readonly Observation[], key: string): Observation[] {
+  return observations.filter((o) => (o.workspace ?? 'default') === key);
 }
 
 /**

@@ -17,7 +17,11 @@ export class LoopGuard {
   private lastHash: string | null = null;
   private consecutive = 0;
 
-  constructor(private readonly threshold = 3) {}
+  constructor(private readonly threshold = 3) {
+    if (!Number.isInteger(threshold) || threshold < 1) {
+      throw new RangeError(`LoopGuard threshold must be a positive integer, got ${threshold}`);
+    }
+  }
 
   /** Record an action signature; returns whether the agent appears stalled. */
   record(signature: string): LoopCheck {

@@ -28,6 +28,21 @@ test('recoverable mode stashes the original and appends a marker', () => {
   const result = compressToolResult(rows, { store, recoverable: true });
   assert.notEqual(result.marker, undefined);
   assert.equal(store.retrieve(result.marker as string), rows);
+  // markerTokens is disclosed and the reported saving is net of it.
+  assert.ok((result.markerTokens ?? 0) > 0);
+  assert.equal(result.saved, result.originalTokens - result.compressedTokens);
+});
+
+test('recoverable mode never strands an original when the token gate rejects it', () => {
+  // A barely-compressible array: the marker overhead must be weighed BEFORE the
+  // stash, so a rejected (method:none) result leaves nothing behind in the store.
+  const store = new CcrStore();
+  const rows = JSON.stringify(Array.from({ length: 8 }, (_, i) => ({ i })));
+  const result = compressToolResult(rows, { store, recoverable: true });
+  if (result.method === 'none') {
+    assert.equal(result.marker, undefined);
+    assert.equal(store.size, 0, 'no original should be stranded in the store on a no-op');
+  }
 });
 
 test('frozenFloor returns the index after the last cache breakpoint', () => {

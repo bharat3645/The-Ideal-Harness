@@ -5,10 +5,12 @@
  */
 
 import { createMcpServer, type McpTool } from '@ideal-harness/core';
+import { redactSecrets, wrapUntrusted } from '@ideal-harness/guard';
 import { reconcileClaims, type ToolCallEvidence } from '../curator.js';
 import { searchObservations } from '../episodic/search.js';
 import { EpisodicStore, type ObservationType } from '../episodic/store.js';
 import { CodeGraph } from '../structural/graph.js';
+import { resolveWorkspace } from '../workspace.js';
 
 export function buildMemoryTools(graph: CodeGraph, store: EpisodicStore): McpTool[] {
   return [
@@ -51,12 +53,16 @@ export function buildMemoryTools(graph: CodeGraph, store: EpisodicStore): McpToo
         required: ['type', 'text', 'ts'],
       },
       handler: (args) => {
+        // Redact secrets BEFORE they are persisted. A secret in long-term memory
+        // that auto-injects into future sessions is the exact nightmare we refuse
+        // to create — mask it at the write boundary, below the model.
+        const { text: safe, count } = redactSecrets(String(args.text ?? ''));
         const record = store.add({
           type: String(args.type) as ObservationType,
-          text: String(args.text ?? ''),
+          text: safe,
           ts: Number(args.ts),
         });
-        return { text: JSON.stringify(record) };
+        return { text: JSON.stringify({ ...record, redactedSecrets: count }) };
       },
     },
     {
@@ -69,7 +75,9 @@ export function buildMemoryTools(graph: CodeGraph, store: EpisodicStore): McpToo
       },
       handler: (args) => {
         const hits = searchObservations(store.all(), String(args.query ?? ''), { limit: Number(args.limit ?? 10) });
-        return { text: JSON.stringify(hits) };
+        // Recalled memory is untrusted: it may carry instructions written in a
+        // past session. Fence it so the model treats it as data, not commands.
+        return { text: wrapUntrusted(JSON.stringify(hits), { source: 'memory' }) };
       },
     },
     {
@@ -93,8 +101,17 @@ export function buildMemoryTools(graph: CodeGraph, store: EpisodicStore): McpToo
 }
 
 export function startMemoryMcp(): Promise<void> {
+  // Bind to exactly one workspace for the server's whole life. No tool can target
+  // another project, so a confused or injected model cannot reach another repo's
+  // memory. Unresolved workspace → ephemeral (fail-closed), never a shared store.
+  const ws = resolveWorkspace();
+  process.stderr.write(
+    `ideal-harness-memory: workspace ${ws.key}${
+      ws.persistent ? ` (store: ${ws.storeDir})` : ' (ephemeral — not persisted)'
+    }\n`,
+  );
   const graph = new CodeGraph();
-  const store = new EpisodicStore();
+  const store = new EpisodicStore(ws.key);
   return createMcpServer({
     name: 'ideal-harness-memory',
     version: '0.1.0',

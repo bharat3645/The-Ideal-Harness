@@ -10,7 +10,7 @@ The controller never writes the code itself. It dispatches work to fresh subagen
 
 ## Loop
 
-1. **Plan → ledger.** Break the work into tasks. Record each in the durable ledger (`ledger_add`). The ledger survives compaction — it is the controller's memory.
+1. **Plan → ledger.** Break the work into tasks. Record each in the durable ledger (`ledger_add`). The ledger is file-backed (under `.ideal-harness/`), so it survives both context compaction and an MCP-server restart — it is the controller's memory.
 2. **Per task, dispatch a fresh implementer subagent.** Hand it a self-contained brief and the files it needs. It writes its diff to a file (artifact), not into your context. Record the artifact on the ledger task.
 3. **Dispatch a reviewer subagent.** It checks the artifact against the task spec on two axes: spec-compliance and quality. It returns PASS or specific issues.
 4. **Fix loop.** On issues, dispatch a fix subagent with the issues + artifact. Re-review. Cap iterations; if it won't converge, mark the task `failed` and escalate.

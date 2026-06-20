@@ -40,6 +40,9 @@ importers:
       '@ideal-harness/core':
         specifier: workspace:*
         version: link:../core
+      '@ideal-harness/guard':
+        specifier: workspace:*
+        version: link:../guard
 
   packages/orchestrate:
     dependencies:

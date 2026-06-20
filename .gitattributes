@@ -1,0 +1,12 @@
+# Normalize all text to LF in the repo and on checkout, on every platform.
+# The skill-frontmatter and compression parsers are line-ending sensitive;
+# a CRLF checkout must never change behavior.
+* text=auto eol=lf
+
+*.ts   text eol=lf
+*.mjs  text eol=lf
+*.js   text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf

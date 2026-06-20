@@ -6,7 +6,7 @@
  * never the sole signal.
  */
 
-import { Bm25Index } from './bm25.js';
+import { Bm25Index, tokenize } from './bm25.js';
 import type { Observation } from './store.js';
 
 export interface SearchOptions {
@@ -28,9 +28,21 @@ export function searchObservations(
   query: string,
   options: SearchOptions = {},
 ): SearchHit[] {
+  const limit = options.limit ?? 10;
+
+  // Degenerate query: if it tokenizes to nothing (e.g. only single-character
+  // terms, which BM25 filters out), fall back to recency so the caller gets
+  // *something* relevant rather than a silently empty result.
+  if (tokenize(query).length === 0) {
+    return [...observations]
+      .sort((a, b) => b.ts - a.ts)
+      .slice(0, limit)
+      .map((observation) => ({ observation, score: 0 }));
+  }
+
   const index = new Bm25Index(observations.map((o) => ({ id: o.id, text: o.text })));
   const byId = new Map(observations.map((o) => [o.id, o]));
-  const hits = index.search(query, options.limit ?? 10);
+  const hits = index.search(query, limit);
 
   const useRecency = options.recencyHalfLifeMs !== undefined && options.now !== undefined;
   const weight = options.recencyWeight ?? 0.25;

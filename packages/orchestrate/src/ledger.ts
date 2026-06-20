@@ -44,7 +44,10 @@ export class TaskLedger {
   }
 
   all(): readonly LedgerTask[] {
-    return this.tasks;
+    // Return a copy so callers cannot structurally mutate the ledger (push/splice)
+    // behind the controlled add()/update() API. The task objects themselves are
+    // readonly and replaced wholesale by update().
+    return [...this.tasks];
   }
 
   /** First task not yet done/failed — what a resumed controller should pick up. */
@@ -61,12 +64,34 @@ export class TaskLedger {
   }
 
   static parse(json: string): TaskLedger {
-    const data = JSON.parse(json) as { counter?: number; tasks?: LedgerTask[] };
+    const data = JSON.parse(json) as { counter?: number; tasks?: unknown[] };
     const ledger = new TaskLedger();
-    for (const task of data.tasks ?? []) {
-      ledger.tasks.push(task);
+    const STATUSES: readonly TaskStatus[] = ['pending', 'in_progress', 'done', 'failed'];
+    for (const raw of data.tasks ?? []) {
+      if (raw === null || typeof raw !== 'object') {
+        continue; // skip corrupt entries rather than admit a malformed task
+      }
+      const t = raw as Partial<LedgerTask>;
+      if (typeof t.id !== 'string' || typeof t.title !== 'string') {
+        continue;
+      }
+      // A task with a missing/invalid status would be unreachable to nextPending()
+      // and stick forever — default it to 'pending' so a resume can pick it up.
+      const status: TaskStatus = STATUSES.includes(t.status as TaskStatus) ? (t.status as TaskStatus) : 'pending';
+      ledger.tasks.push({
+        id: t.id,
+        title: t.title,
+        status,
+        ...(typeof t.artifact === 'string' ? { artifact: t.artifact } : {}),
+        ...(typeof t.notes === 'string' ? { notes: t.notes } : {}),
+      });
     }
-    ledger.counter = data.counter ?? ledger.tasks.length;
+    // Counter must exceed every existing `tN` id, or add() will mint a colliding id.
+    const maxNumericId = ledger.tasks.reduce((max, t) => {
+      const m = /^t(\d+)$/.exec(t.id);
+      return m ? Math.max(max, Number(m[1])) : max;
+    }, 0);
+    ledger.counter = Math.max(typeof data.counter === 'number' ? data.counter : 0, maxNumericId);
     return ledger;
   }
 }

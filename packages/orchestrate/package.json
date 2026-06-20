@@ -4,6 +4,14 @@
   "type": "module",
   "description": "The Ideal Harness orchestration & control flow: durable task ledger, tool registry, loop/no-progress guard, spend governor, API retry/backoff, session resume/checkpoint, plus the subagent-driven-development and brainstorming skills.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bharat3645/The-Ideal-Harness.git",
+    "directory": "packages/orchestrate"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -22,6 +30,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "tsc -p tsconfig.test.json && node --test \"dist-test/test/**/*.test.js\"",
     "clean": "rm -rf dist dist-test"

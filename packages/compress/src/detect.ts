@@ -22,8 +22,11 @@ export interface CompressionResult {
   readonly method: CompressionMethod;
   readonly originalTokens: number;
   readonly compressedTokens: number;
+  /** Net tokens saved — already accounts for the retrieval-marker overhead. */
   readonly saved: number;
   readonly marker?: string;
+  /** Token cost of the appended CCR marker (0 when not recoverable), for honest accounting. */
+  readonly markerTokens?: number;
 }
 
 export interface CompressOptions {
@@ -78,26 +81,35 @@ export function compressToolResult(content: string, options: CompressOptions = {
     return noop(content);
   }
 
-  let text = candidate.text;
-  let marker: string | undefined;
-  if (options.recoverable === true && options.store !== undefined) {
-    marker = options.store.stash(content);
-    text = `${text}\n${marker}`;
-  }
-
-  const compressedTokens = estimateTokens(text);
-  // Token gate: only accept a real shrink.
-  if (compressedTokens >= originalTokens) {
+  // Account for the retrieval-marker overhead in the token gate BEFORE stashing,
+  // so a compression that only wins without the marker never strands an original
+  // in the store. The preview marker is the exact length of a real one (16 hex).
+  const willStash = options.recoverable === true && options.store !== undefined;
+  const markerPreview = willStash ? '\n<<ccr:0000000000000000>>' : '';
+  const gatedTokens = estimateTokens(candidate.text + markerPreview);
+  // Token gate: only accept a real shrink (marker included).
+  if (gatedTokens >= originalTokens) {
     return noop(content);
   }
 
+  let text = candidate.text;
+  let marker: string | undefined;
+  let markerTokens = 0;
+  if (willStash) {
+    // Safe to stash now: we have committed to returning the compressed result.
+    marker = (options.store as CcrStore).stash(content);
+    text = `${text}\n${marker}`;
+    markerTokens = estimateTokens(`\n${marker}`);
+  }
+
+  const compressedTokens = estimateTokens(text);
   return {
     text,
     method: candidate.method,
     originalTokens,
     compressedTokens,
     saved: originalTokens - compressedTokens,
-    ...(marker !== undefined ? { marker } : {}),
+    ...(marker !== undefined ? { marker, markerTokens } : {}),
   };
 }
 

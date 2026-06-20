@@ -16,7 +16,10 @@
     "clean": "turbo run clean",
     "biome": "biome check .",
     "biome:fix": "biome check --write .",
-    "validate": "node packages/core/dist/cli/validate.js"
+    "validate": "node packages/core/dist/cli/index.js validate",
+    "setup": "node scripts/setup.mjs",
+    "release": "pnpm -r build && pnpm -r publish --access public",
+    "release:dry": "pnpm -r build && pnpm -r publish --dry-run --no-git-checks"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.0.0",

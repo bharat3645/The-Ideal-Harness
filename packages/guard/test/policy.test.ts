@@ -51,3 +51,77 @@ test('git push and shell network fetches require approval', () => {
 test('plain shell commands are ask, not allow', () => {
   assert.equal(evaluate({ tool: 'Bash', input: { command: 'ls -la' } }, DEFAULT_RULES).action, 'ask');
 });
+
+test('Windows backslash credential paths are denied (no separator bypass)', () => {
+  for (const file of [
+    'C:\\Users\\bob\\.env',
+    'C:\\Users\\bob\\.env.local',
+    'C:\\Users\\bob\\.aws\\config',
+    'C:\\Users\\bob\\.ssh\\config',
+  ]) {
+    assert.equal(
+      evaluate({ tool: 'Read', input: { file_path: file } }, DEFAULT_RULES).action,
+      'deny',
+      `${file} should be denied`,
+    );
+  }
+});
+
+test('credential matching is case-insensitive (no upper/mixed-case bypass)', () => {
+  for (const file of ['/repo/.ENV', '/home/u/.SSH/ID_RSA', '/home/u/.AWS/CREDENTIALS']) {
+    assert.equal(
+      evaluate({ tool: 'Read', input: { file_path: file } }, DEFAULT_RULES).action,
+      'deny',
+      `${file} should be denied`,
+    );
+  }
+});
+
+test('credential matching is anchored — legitimate lookalike files are NOT denied', () => {
+  // Anchored patterns must not over-block files that merely contain the substring.
+  for (const file of [
+    '/repo/src/mycredentials',
+    '/repo/notes/old_credentials',
+    '/repo/docs/id_rsa_format.md',
+    '/repo/keys/my_id_rsa_notes.txt',
+    '/repo/src/environment.ts',
+  ]) {
+    const decision = evaluate({ tool: 'Read', input: { file_path: file } }, DEFAULT_RULES);
+    assert.equal(decision.action, 'allow', `${file} should be allowed (false positive)`);
+  }
+});
+
+test('anchored credential patterns still deny the real files', () => {
+  for (const file of [
+    '/home/u/credentials',
+    '/home/u/.aws/credentials',
+    '/tmp/id_rsa',
+    '/tmp/id_rsa.pub',
+    '/proj/.env.production',
+  ]) {
+    assert.equal(
+      evaluate({ tool: 'Read', input: { file_path: file } }, DEFAULT_RULES).action,
+      'deny',
+      `${file} should still be denied`,
+    );
+  }
+});
+
+test('editing the policy source itself is denied, on both path styles', () => {
+  assert.equal(
+    evaluate({ tool: 'Edit', input: { file_path: '/repo/packages/guard/src/policy/defaults.ts' } }, DEFAULT_RULES)
+      .action,
+    'deny',
+  );
+  assert.equal(
+    evaluate(
+      { tool: 'Write', input: { file_path: 'C:\\repo\\packages\\guard\\src\\policy\\engine.ts' } },
+      DEFAULT_RULES,
+    ).action,
+    'deny',
+  );
+  assert.equal(
+    evaluate({ tool: 'Edit', input: { file_path: 'C:\\repo\\.claude-plugin\\plugin.json' } }, DEFAULT_RULES).action,
+    'deny',
+  );
+});

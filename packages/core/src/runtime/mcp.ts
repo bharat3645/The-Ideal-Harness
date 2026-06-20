@@ -83,7 +83,12 @@ export function createMcpServer(options: McpServerOptions): { listen: () => Prom
         });
         return;
       case 'tools/call': {
-        const name = req.params?.name as string;
+        const name = req.params?.name;
+        if (typeof name !== 'string') {
+          // Distinguish malformed input from a genuinely unknown tool.
+          replyError(req.id, -32602, 'invalid params: tool name must be a string');
+          return;
+        }
         const tool = toolsByName.get(name);
         if (tool === undefined) {
           replyError(req.id, -32602, `unknown tool: ${name}`);

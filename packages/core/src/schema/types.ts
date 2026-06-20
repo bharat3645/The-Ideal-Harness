@@ -14,11 +14,22 @@ export interface PluginManifest {
   readonly author?: PluginAuthor;
 }
 
+/** A non-path plugin source: github / url / git-subdir / npm. */
+export interface MarketplaceSourceSpec {
+  readonly source: 'github' | 'url' | 'git-subdir' | 'npm';
+  readonly repo?: string;
+  readonly url?: string;
+  readonly path?: string;
+  readonly package?: string;
+  readonly version?: string;
+  readonly registry?: string;
+}
+
 /** One entry in a marketplace's `plugins` array. */
 export interface MarketplacePlugin {
   readonly name: string;
-  /** Relative path to the plugin dir, or a git/npm source spec. */
-  readonly source: string;
+  /** A relative path to the plugin dir, or a git/npm source spec object. */
+  readonly source: string | MarketplaceSourceSpec;
   readonly description?: string;
 }
 

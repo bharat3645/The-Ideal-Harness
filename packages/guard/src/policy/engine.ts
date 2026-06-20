@@ -33,6 +33,17 @@ export function subjectFor(request: ToolRequest): string {
   }
 }
 
+/**
+ * Normalize a subject before matching so the floor cannot be bypassed by path
+ * shape or case. Windows backslash paths (`C:\proj\.env`) are folded to forward
+ * slashes so the `/`-anchored credential/self-policy patterns still fire, and a
+ * lowercased copy is matched case-insensitively (`.ENV`, `ID_RSA`, `CREDENTIALS`
+ * on a case-insensitive filesystem must not slip through).
+ */
+function normalizeSubject(subject: string): string {
+  return subject.replace(/\\/g, '/');
+}
+
 function ruleMatches(rule: PolicyRule, request: ToolRequest, subject: string): boolean {
   if (rule.tool !== undefined && rule.tool !== '*' && rule.tool !== request.tool) {
     return false;
@@ -40,7 +51,7 @@ function ruleMatches(rule: PolicyRule, request: ToolRequest, subject: string): b
   if (rule.match === undefined) {
     return true;
   }
-  return new RegExp(rule.match).test(subject);
+  return new RegExp(rule.match, 'i').test(normalizeSubject(subject));
 }
 
 /** Evaluate a tool request against an ordered rule set. */

@@ -4,18 +4,44 @@
  * detect stalls, and enforce a spend cap. The cap comes from IDEAL_HARNESS_SPEND_CAP.
  */
 
-import { createMcpServer, type McpTool } from '@ideal-harness/core';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { createMcpServer, type McpTool, type McpToolResult } from '@ideal-harness/core';
 import { TaskLedger, type TaskStatus } from '../ledger.js';
 import { LoopGuard } from '../loopguard.js';
 import { SpendGovernor } from '../spend.js';
 
-export function buildOrchestrateTools(ledger: TaskLedger, loop: LoopGuard, spend: SpendGovernor): McpTool[] {
+/** Result of a persist attempt — lets handlers surface durability failures. */
+export interface PersistResult {
+  readonly ok: boolean;
+  readonly error?: string;
+}
+
+export function buildOrchestrateTools(
+  ledger: TaskLedger,
+  loop: LoopGuard,
+  spend: SpendGovernor,
+  /** Persist callback invoked after every ledger mutation (no-op success by default). */
+  persist: () => PersistResult = () => ({ ok: true }),
+): McpTool[] {
+  // A mutation result must report whether it actually reached durable storage —
+  // returning success when the write failed would be silent data loss.
+  const withPersist = (value: unknown): McpToolResult => {
+    const p = persist();
+    if (p.ok) {
+      return { text: JSON.stringify(value) };
+    }
+    return {
+      text: JSON.stringify({ ...(value as object), persisted: false, warning: `not persisted: ${p.error}` }),
+      isError: true,
+    };
+  };
   return [
     {
       name: 'ledger_add',
       description: 'Add a task to the durable ledger. Returns the created task.',
       inputSchema: { type: 'object', properties: { title: { type: 'string' } }, required: ['title'] },
-      handler: (args) => ({ text: JSON.stringify(ledger.add(String(args.title ?? ''))) }),
+      handler: (args) => withPersist(ledger.add(String(args.title ?? ''))),
     },
     {
       name: 'ledger_update',
@@ -41,7 +67,7 @@ export function buildOrchestrateTools(ledger: TaskLedger, loop: LoopGuard, spend
         if (args.notes !== undefined) {
           patch.notes = String(args.notes);
         }
-        return { text: JSON.stringify(ledger.update(String(args.id), patch)) };
+        return withPersist(ledger.update(String(args.id), patch));
       },
     },
     {
@@ -74,9 +100,64 @@ export function buildOrchestrateTools(ledger: TaskLedger, loop: LoopGuard, spend
   ];
 }
 
-export function startOrchestrateMcp(): Promise<void> {
+/** Resolve the spend cap from the env, ignoring (with a loud warning) invalid values. */
+function resolveSpendCap(): number | null {
   const capRaw = process.env.IDEAL_HARNESS_SPEND_CAP;
-  const cap = capRaw !== undefined && capRaw.length > 0 ? Number(capRaw) : null;
-  const tools = buildOrchestrateTools(new TaskLedger(), new LoopGuard(), new SpendGovernor(cap));
+  if (capRaw === undefined || capRaw.length === 0) {
+    return null;
+  }
+  const n = Number(capRaw);
+  if (!Number.isFinite(n) || n < 0) {
+    // Never silently disable the cap on a typo — warn and fall back to unmetered.
+    process.stderr.write(
+      `ideal-harness-orchestrate: ignoring invalid IDEAL_HARNESS_SPEND_CAP="${capRaw}" (using no cap)\n`,
+    );
+    return null;
+  }
+  return n;
+}
+
+export function startOrchestrateMcp(): Promise<void> {
+  // File-backed ledger so a controller's progress survives an MCP server restart,
+  // not just context compaction. Lives under the gitignored .ideal-harness/ dir.
+  const ledgerPath =
+    process.env.IDEAL_HARNESS_LEDGER ?? join(process.cwd(), '.ideal-harness', 'orchestrate-ledger.json');
+  let ledger = new TaskLedger();
+  try {
+    if (existsSync(ledgerPath)) {
+      ledger = TaskLedger.parse(readFileSync(ledgerPath, 'utf8'));
+    }
+  } catch (error) {
+    // Quarantine an unreadable ledger so we don't hit the same poison pill on
+    // every restart, but preserve it (renamed) for debugging instead of deleting.
+    const corruptPath = `${ledgerPath}.corrupt`;
+    try {
+      renameSync(ledgerPath, corruptPath);
+      process.stderr.write(
+        `ideal-harness-orchestrate: could not load ledger (${String(error)}); moved corrupt file to ${corruptPath}, starting fresh\n`,
+      );
+    } catch {
+      process.stderr.write(
+        `ideal-harness-orchestrate: could not load or quarantine ledger (${String(error)}); starting fresh\n`,
+      );
+    }
+  }
+  const persist = (): PersistResult => {
+    try {
+      mkdirSync(dirname(ledgerPath), { recursive: true });
+      // Atomic write: serialize to a temp file then rename over the target, so a
+      // crash mid-write can never leave a torn/half-written (corrupt) ledger.
+      const tmp = `${ledgerPath}.tmp`;
+      writeFileSync(tmp, ledger.serialize());
+      renameSync(tmp, ledgerPath);
+      return { ok: true };
+    } catch (error) {
+      process.stderr.write(`ideal-harness-orchestrate: could not persist ledger (${String(error)})\n`);
+      return { ok: false, error: String(error) };
+    }
+  };
+  process.stderr.write(`ideal-harness-orchestrate: ledger ${ledgerPath} (${ledger.all().length} task(s) loaded)\n`);
+
+  const tools = buildOrchestrateTools(ledger, new LoopGuard(), new SpendGovernor(resolveSpendCap()), persist);
   return createMcpServer({ name: 'ideal-harness-orchestrate', version: '0.1.0', tools }).listen();
 }

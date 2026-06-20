@@ -3,6 +3,20 @@
 Derived from DESIGN.md. v0.1 = `core → guard → compress → memory → orchestrate`. v0.2 = `web → skills → design → eval`.
 Status: PLAN. Companion to DESIGN.md.
 
+## v0.1 reality vs this plan (read this first)
+
+This file is the original PLAN; a few items below describe the v0.2 target, not what v0.1 ships. The honest delta:
+
+- **Automatic enforcement (hooks):** only **policy + outbound-secret block** (PreToolUse) and **secret redaction + injection fencing** (PostToolUse) run automatically, plus the SessionStart bootstrap inject. Sandbox, compression, drift-guard, and skill-vetting are real but invoked as **MCP tools / CLIs**, not auto-applied by a hook yet. (Auto-applying sandbox via PreToolUse `updatedInput` and compression via PostToolUse `updatedToolOutput` is the next wiring step.)
+- **Memory — structural:** regex extraction, not tree-sitter (v0.2); no MinHash/LSH dedupe yet.
+- **Memory — episodic:** **in-memory BM25** with an optional recency tie-breaker. No SQLite-FTS5, no int8-vector, no RRF hybrid (all v0.2). Episodic memory does **not** persist across sessions in v0.1.
+- **Memory — faces:** the MCP tools are `add_file`, `query_graph`, `memory_search`, `memory_write`, `reconcile`. There is no `get_node` tool and no automatic SessionStart memory injection (the model calls the tools).
+- **Orchestrate — CLI:** exposes `mcp` only. `plan` / `execute` / `resume` exist as library functions (ledger / checkpoint), not CLI subcommands yet.
+- **Orchestrate — ledger:** serialize/parse + checkpoint round-trip are implemented and tested, but the module does no file I/O — durable persistence is the **caller's** responsibility (persist the checkpoint blob) until v0.2 wires it.
+- **Orchestrate — skills:** `subagent-driven-development` and `brainstorming` ship as SKILL.md. **`autoplan` is not shipped** in v0.1.
+
+The contracts are stable; the engines behind them sharpen in v0.2.
+
 ## Tech stack (decided)
 - **pnpm workspaces + Turborepo + Biome + TypeScript** — mirrors the Voraxx toolchain the user already runs (proven, familiar) and matches the CC-plugin ecosystem (gstack/gsd-core/addyosmani are TS/markdown).
 - Single-language for v0.1 coherence: TS everywhere. Tree-sitter via `web-tree-sitter` (WASM) so the code-graph engine stays in-process, no Python sidecar.
@@ -77,6 +91,38 @@ The crown jewel. Everything deterministic, below the LLM.
 - HITL escalation routes to guard's ask-gate.
 - Faces: skills (subagent-driven-dev, brainstorming, autoplan) + hooks + CLI (`ideal-harness plan|execute|resume`).
 - Tests: ledger survives simulated compaction, loop-guard trips, spend-cap aborts, resume-from-checkpoint.
+
+## Memory isolation contract (the boundary; scaffolded in v0.1, persisted in v0.2)
+
+A globally-installed memory module must never leak project A's memory into project B.
+We solve this by construction, below the model — not by a query filter someone can forget.
+
+**The contract:**
+
+1. **The project is the storage boundary.** Persistence lives at `<project-root>/.ideal-harness/memory/`
+   (gitignored), never in `$HOME`. The filesystem *is* the isolation boundary — there is no shared
+   pool to leak from. (v0.1 store is in-memory; v0.2 drops SQLite in at exactly this path.)
+2. **The server binds to one workspace for its whole life.** `startMemoryMcp` calls `resolveWorkspace()`
+   once at startup (walk up from `cwd` to the `.git`/`.ideal-harness` marker). **No tool accepts a
+   parameter that targets another project** — a confused or prompt-injected model cannot reach another
+   repo's memory, because the capability does not exist in the API.
+3. **Fail closed.** Unresolved workspace, or `IDEAL_HARNESS_MEMORY=off` → **ephemeral** (no persistence),
+   never a shared/global store. The memory analogue of guard's deny-wins.
+4. **Defence in depth: stamp + assert.** Every record carries its `workspace` key (git remote identity,
+   else a path hash). `filterByWorkspace` keeps only the bound workspace's records when a store is loaded,
+   so a misplaced or merged DB is inert.
+5. **Guard firewall at the boundary.** `memory_write` runs `redactSecrets` before persisting (a secret in
+   long-term memory that auto-injects into future sessions is the nightmare we refuse to create);
+   `memory_search` wraps recall in `wrapUntrusted` (recalled text may carry injected instructions from a
+   past session — treat it as data, not commands).
+6. **Two tiers, never conflated.** Project memory (episodic + code-graph) is **project-local** and bound as
+   above. A future opt-in **user profile** (preferences/style only — no project specifics, no secrets) may be
+   user-global; the contamination danger exists only when project data lands in a global pool, so it never does.
+
+**Shipped in v0.1 (scaffolding):** `workspace.ts` (resolver, key derivation, fail-closed bind), per-record
+workspace stamping + `filterByWorkspace`, and the redact-on-write / fence-on-read guard firewall — all tested.
+**v0.2 adds:** the SQLite-FTS5 backend writing under `storeDir`, plus `memory list/clear/export` lifecycle tools.
+The boundary is already enforced and tested, so persistence drops in behind a proven contract.
 
 ## Dependency graph & build order
 `core` → `guard` → `compress`, `memory` (parallel, both need core+guard) → `orchestrate` (needs core+guard+memory).

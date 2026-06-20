@@ -47,8 +47,19 @@ function parseScalar(raw: string): unknown {
   if (value === 'null' || value === '~') {
     return null;
   }
-  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-    return value.slice(1, -1);
+  // Double-quoted: parse as JSON so it is symmetric with serializeScalar(), which
+  // emits double-quoted strings via JSON.stringify. Stripping the quotes without
+  // unescaping would corrupt any value containing an escaped quote on round-trip.
+  if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value.slice(1, -1);
+    }
+  }
+  // Single-quoted (YAML semantics): literal, with '' as an escaped single quote.
+  if (value.length >= 2 && value.startsWith("'") && value.endsWith("'")) {
+    return value.slice(1, -1).replaceAll("''", "'");
   }
   if (/^-?\d+(?:\.\d+)?$/.test(value)) {
     return Number(value);
@@ -61,7 +72,9 @@ function parseScalar(raw: string): unknown {
  * Returns a null frontmatter string when the document has no leading fence.
  */
 export function splitFrontmatter(content: string): { frontmatter: string | null; body: string } {
-  const normalized = content.replace(/^﻿/, '');
+  // Strip a leading BOM and normalize CRLF / lone-CR to LF so the parser is
+  // line-ending agnostic — a CRLF checkout (Windows) must parse identically to LF.
+  const normalized = content.replace(/^﻿/, '').replace(/\r\n?/g, '\n');
   if (!normalized.startsWith(`${FENCE}\n`) && !normalized.startsWith(`${FENCE}\r\n`)) {
     return { frontmatter: null, body: normalized };
   }

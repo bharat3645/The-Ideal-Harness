@@ -50,10 +50,12 @@ export function renderSkillForHost(parsed: ParsedSkill, host: Host, vars: Templa
   const { text: body } = renderTemplate(parsed.body, { HOST: host, ...vars });
 
   // 2. Frontmatter: keep name/description first; fold the host into metadata.
-  const existingMeta =
-    typeof parsed.data.metadata === 'object' && parsed.data.metadata !== null
-      ? (parsed.data.metadata as Record<string, unknown>)
-      : {};
+  const meta = parsed.data.metadata;
+  // Only a plain object can absorb the `host` key. An array (typeof === 'object')
+  // must NOT be spread — that would turn [a,b] into {0:a,1:b,host}; a scalar would
+  // be dropped entirely. In those cases preserve the original value verbatim (the
+  // host is still available to the body as the {{HOST}} template var).
+  const isPlainObject = typeof meta === 'object' && meta !== null && !Array.isArray(meta);
   const ordered: Record<string, unknown> = {};
   if (parsed.data.name !== undefined) {
     ordered.name = parsed.data.name;
@@ -66,7 +68,13 @@ export function renderSkillForHost(parsed: ParsedSkill, host: Host, vars: Templa
       ordered[key] = value;
     }
   }
-  ordered.metadata = { ...existingMeta, host };
+  if (isPlainObject) {
+    ordered.metadata = { ...(meta as Record<string, unknown>), host };
+  } else if (meta !== undefined) {
+    ordered.metadata = meta; // non-object metadata: preserve as authored
+  } else {
+    ordered.metadata = { host };
+  }
 
   // 3. Reassemble.
   return `---\n${serializeFrontmatter(ordered)}\n---\n\n${body}`;

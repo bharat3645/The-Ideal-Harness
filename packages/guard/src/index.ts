@@ -20,5 +20,6 @@ export { looksLikeInjection, type WrapOptions, wrapUntrusted } from './injection
 export * from './policy/index.js';
 export { type RedactionPattern, type RedactionResult, redactSecrets, SECRET_PATTERNS } from './redact.js';
 export { buildSandboxCommand, type Platform, type SandboxCommand, type SandboxOptions, scrubEnv } from './sandbox.js';
+export { type ScrubResult, scrubToolOutput } from './scrub.js';
 export { type AccessRecord, SecretsBroker } from './secrets.js';
 export * from './vet/index.js';

@@ -34,6 +34,17 @@ test('withRetry retries retryable failures then succeeds', async () => {
   assert.equal(sleeps.length, 2);
 });
 
+test('withRetry rejects an invalid maxAttempts instead of throwing undefined', async () => {
+  await assert.rejects(
+    withRetry(async () => 'x', { maxAttempts: 0 }),
+    RangeError,
+  );
+  await assert.rejects(
+    withRetry(async () => 'x', { maxAttempts: -1 }),
+    RangeError,
+  );
+});
+
 test('withRetry re-throws fatal errors immediately', async () => {
   let calls = 0;
   await assert.rejects(

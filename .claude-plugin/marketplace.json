@@ -10,27 +10,27 @@
   "plugins": [
     {
       "name": "ideal-harness-core",
-      "source": "./packages/core",
+      "source": { "source": "npm", "package": "@ideal-harness/core" },
       "description": "Substrate: plugin loader, skill templating + multi-host generation, validation, bootstrap skill. Required by all other modules."
     },
     {
       "name": "ideal-harness-guard",
-      "source": "./packages/guard",
+      "source": { "source": "npm", "package": "@ideal-harness/guard" },
       "description": "Enforcement floor below the LLM: deny-wins policy, permission defaults, injection defense, secret redaction + broker, skill vetting, drift-guard, sandbox."
     },
     {
       "name": "ideal-harness-compress",
-      "source": "./packages/compress",
+      "source": { "source": "npm", "package": "@ideal-harness/compress" },
       "description": "Deterministic, cache-safe tool_result compression (JSON sampling, log RLE, stack-trace collapse) with a Compress-Cache-Retrieve store, plus the caveman output-side terse mode."
     },
     {
       "name": "ideal-harness-memory",
-      "source": "./packages/memory",
+      "source": { "source": "npm", "package": "@ideal-harness/memory" },
       "description": "Structural code-graph with token-budgeted subgraph retrieval + episodic memory with BM25 relevance ranking and a curator that reconciles claims against tool-call evidence."
     },
     {
       "name": "ideal-harness-orchestrate",
-      "source": "./packages/orchestrate",
+      "source": { "source": "npm", "package": "@ideal-harness/orchestrate" },
       "description": "Orchestration & control flow: durable task ledger, tool registry, loop/no-progress guard, spend governor, API retry/backoff, session resume/checkpoint, plus subagent-driven-development and brainstorming skills."
     }
   ]

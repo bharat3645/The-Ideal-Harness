@@ -41,13 +41,26 @@ export async function runGenHosts(argv: readonly string[]): Promise<number> {
     process.stderr.write('usage: ideal-harness gen-hosts <template> <outDir> [--hosts=claude,codex]\n');
     return 1;
   }
-  const hosts: Host[] = hostFlag
-    ? hostFlag
-        .slice('--hosts='.length)
-        .split(',')
-        .map((value) => value.trim())
-        .filter(isHost)
-    : [...HOSTS];
+  let hosts: Host[];
+  if (hostFlag) {
+    const requested = hostFlag
+      .slice('--hosts='.length)
+      .split(',')
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+    const invalid = requested.filter((value) => !isHost(value));
+    if (invalid.length > 0) {
+      // Don't silently drop unknown hosts and exit 0 — tell the user what was rejected.
+      process.stderr.write(`warning: ignoring unknown host(s): ${invalid.join(', ')}. Valid: ${HOSTS.join(', ')}\n`);
+    }
+    hosts = requested.filter(isHost);
+    if (hosts.length === 0) {
+      process.stderr.write('no valid hosts requested; nothing generated\n');
+      return 1;
+    }
+  } else {
+    hosts = [...HOSTS];
+  }
   const written = await generateHostSkills({ templatePath, outDir, hosts });
   for (const path of written) {
     process.stdout.write(`wrote ${path}\n`);

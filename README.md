@@ -31,7 +31,7 @@ The safety layer is not advice to the model. It is deterministic code that runs 
 
 ## The numbers
 
-Measured on a real codebase (the Voraxx worker source: 105 files, 33,629 LOC, indexed in 16 ms into 2,707 symbols; whole-repo secret scan covered 2,577 files). These are the only metrics we claim, and a couple of them are deliberately unflattering — the ones that *can't* be faked are the proof that the rest are real.
+Measured on a real codebase (the Voraxx worker source: 105 files, 33,629 LOC, indexed in 16 ms into 2,707 symbols; whole-repo secret scan covered 2,577 files). These are the only metrics we claim, and a couple of them are deliberately unflattering — the ones that *can't* be faked are the proof that the rest are real. The Voraxx corpus is external and is **not** bundled in this repo, so these exact token counts can't be re-run from here; the methodology and per-case breakdown are in [`BENCHMARK.md`](./BENCHMARK.md), and the compressors themselves are covered by the in-repo unit tests.
 
 | Capability | Measurement | Result |
 |---|---|---|
@@ -58,7 +58,7 @@ Each is an independently installable plugin; `core` is required. Every engine al
 | Module | Role | What lives here |
 |---|---|---|
 | `core` | substrate | Plugin loader, manifest + skill validation, dependency-free skill templating with multi-host generation (Claude Code, Codex, Gemini, Cursor), a bootstrap skill, and the minimal MCP stdio server every other engine reuses. |
-| `guard` | enforcement floor, below the model | Deny-wins / fail-closed policy engine with Anthropic-aligned defaults, prompt-injection wrapping, always-on secret redaction, a scoped secrets broker, a skill-vetting scanner (threat-signature DB + homoglyph / hidden-char detection), a drift-guard authority ladder that catches hallucinated symbols, and an OS sandbox command builder (Seatbelt / bubblewrap) with subprocess env-scrub. `PreToolUse` / `PostToolUse` hooks make all of it automatic. |
+| `guard` | enforcement floor, below the model | Deny-wins / fail-closed policy engine with Anthropic-aligned defaults, prompt-injection wrapping, always-on secret redaction, a scoped secrets broker, a skill-vetting scanner (threat-signature DB + homoglyph / hidden-char detection), a drift-guard authority ladder that catches hallucinated symbols, and an OS sandbox command builder (Seatbelt / bubblewrap) with subprocess env-scrub. `PreToolUse` / `PostToolUse` hooks make **policy, outbound-secret blocking, secret redaction, and injection fencing** automatic; sandbox, vetting, drift-guard, and the broker are MCP tools / CLIs the host invokes (see below). |
 | `compress` | context economy | Deterministic, prompt-cache-safe `tool_result` compression — anomaly-preserving JSON sampling, log RLE, stack-trace collapse — gated by a token threshold, with a Compress-Cache-Retrieve (CCR) store for lossless recovery, plus the caveman output-side terse mode. |
 | `memory` | recall | A structural code-graph with token-budgeted subgraph retrieval (recall structure, not whole files) and an episodic store ranked by real BM25 relevance, not recency, kept honest by a curator that reconciles claims against tool-call evidence. |
 | `orchestrate` | control flow | Durable task ledger, tool registry, loop / no-progress guard, spend governor, API retry / backoff, session resume / checkpoint, plus subagent-driven-development and brainstorming (HARD-GATE) skills. |
@@ -72,17 +72,34 @@ This is **not** a multi-backend runtime. Portability comes in two tiers, and we 
 
 **What does not travel:** hook-driven *automatic* enforcement. On a Tier-2 host, nothing fires on its own — the host must call the policy, sandbox, and vetting CLIs itself. We would rather say this out loud than pretend the floor is free everywhere.
 
-## What runs on every tool call (Tier 1)
+## What runs automatically on every tool call (Tier 1)
 
-When the model proposes a tool call, `guard` runs before the call executes and again on its result — all deterministic, none of it a prompt:
+Two `guard` hooks fire deterministically around every tool call — no prompt, no model cooperation. This is the floor that runs **on its own**:
+
+**PreToolUse — before the call executes:**
 
 1. **Policy check.** Deny-wins, fail-closed. Credential reads, `rm -rf`, and writes to the policy file are denied; ambiguous actions become an ask, not a silent allow.
-2. **Sandbox.** Shell commands are wrapped in a Seatbelt / bubblewrap profile with a scrubbed subprocess environment.
-3. **Secret redaction.** The result is swept before it reaches the model or the logs — the same sweep that flagged 40 secret-shaped strings across 18 files on a 2,577-file repo.
-4. **Compression.** Oversized `tool_result` payloads pass the token gate and get compressed cache-safe, with the original recoverable from the CCR store.
-5. **Drift-guard.** Symbol references are checked against the code-graph, so a hallucinated symbol is flagged before it becomes a broken edit.
+2. **Outbound-secret block.** Egress tools (`Bash`, `Write`, `Edit`, `WebFetch`) are scanned; a call that would carry a secret out is blocked before it runs.
 
-On Tier 2 the same five primitives exist as CLIs and MCP tools; the host decides when to call them.
+**PostToolUse — on the result, before the model reads it:**
+
+3. **Secret redaction.** The result is rewritten with secrets masked as `[REDACTED:type]` (via the `updatedToolOutput` contract) before the model sees it — the same detector that flagged 40 secret-shaped strings across 18 files on a 2,577-file repo.
+4. **Injection fencing.** Web/MCP output, or any result tripping an injection cue, is wrapped in a breakout-safe `<untrusted_content>` fence so the model treats it as data, not instructions.
+
+**At SessionStart**, the `using-ideal-harness` bootstrap skill is injected so the model knows the floor is active and how to route.
+
+## Tools the agent or host invokes — deterministic, but not automatic
+
+These are the rest of the floor and the engines. They are real, deterministic code exposed as **MCP tools and CLIs** — the model or host calls them deliberately; they are not (yet) hook-applied. Auto-applying sandbox (via PreToolUse `updatedInput`) and compression (via PostToolUse `updatedToolOutput`) is the next wiring step on the roadmap.
+
+- **Sandbox** — `buildSandboxCommand` wraps a shell command in a Seatbelt / bubblewrap profile with a scrubbed env (CLI / primitive).
+- **Compression + CCR** — `compress_tool_result` shrinks oversized JSON / logs cache-safe; `ccr_retrieve` recovers the original.
+- **Drift-guard** — `verify_symbol` checks a symbol against the code-graph before you rely on it.
+- **Skill vetting** — `vet_skill` scans a skill (threat-signature DB + homoglyph / hidden-char) before you install it.
+- **Memory** — `query_graph`, `memory_search`, `memory_write`, `reconcile`, `add_file`.
+- **Orchestrate** — `ledger_add` / `ledger_update` / `ledger_status`, `loop_check`, `spend_check`.
+
+On Tier 2 (any MCP host) every item in **both** lists is reachable as the same MCP servers / CLIs; only the automatic hook application above is Claude-Code-specific.
 
 ## Principles
 
@@ -114,42 +131,64 @@ On Tier 2 the same five primitives exist as CLIs and MCP tools; the host decides
 
 ## Install & quickstart
 
-The Ideal Harness is a pnpm monorepo that ships as a plugin marketplace. Each module installs independently; `core` is required.
+The Ideal Harness ships as a Claude Code **plugin marketplace** backed by npm. Each module is an independently installable plugin; `core` is required. **Install once, machine-wide** — plugins install at user scope and are available in every project.
+
+### Tier 1 — install in Claude Code (recommended)
 
 ```bash
-# Tier 1 — install in Claude Code
-# Add the marketplace, install core (required) plus whatever you want.
+# Add the marketplace, then install core (required) plus whatever you want.
+# Each plugin is sourced from npm, so its built code, hooks, and MCP server
+# install and wire up automatically — no clone, no build, no .mcp.json editing.
 /plugin marketplace add bharat3645/The-Ideal-Harness
 /plugin install ideal-harness-core@ideal-harness        # required
-/plugin install ideal-harness-guard@ideal-harness
+/plugin install ideal-harness-guard@ideal-harness        # the enforcement floor
 /plugin install ideal-harness-compress@ideal-harness
 /plugin install ideal-harness-memory@ideal-harness
 /plugin install ideal-harness-orchestrate@ideal-harness
 ```
 
+Each plugin's `source` is its npm package (`@ideal-harness/*`); installing it pulls the published tarball (which includes `dist/`, hooks, and skills) into `${CLAUDE_PLUGIN_ROOT}`, so the floor and tools work immediately. Approve the MCP servers once when prompted.
+
+### Tier 2 — run any engine as an MCP server / CLI (any MCP host)
+
 ```bash
-# Tier 2 — run any engine as an MCP server / CLI (no Tier-1 host required)
-npx @ideal-harness/guard mcp        # policy / sandbox / vet — MCP server (stdio)
-npx @ideal-harness/memory mcp       # code-graph + episodic store
-npx @ideal-harness/compress mcp     # tool_result compression + CCR
-npx @ideal-harness/orchestrate mcp  # ledger / spend / loop guard
+npx -y @ideal-harness/guard mcp        # policy / vet / drift / redact — MCP (stdio)
+npx -y @ideal-harness/memory mcp       # code-graph + episodic store
+npx -y @ideal-harness/compress mcp     # tool_result compression + CCR
+npx -y @ideal-harness/orchestrate mcp  # ledger / spend / loop guard
 ```
 
 Point a Tier-2 host (Cursor / Cline / Codex / Gemini) at the MCP servers, or call the CLIs directly to invoke policy checks, sandboxing, and skill vetting yourself.
 
+### Develop from source (no publish needed)
+
+Working on the harness itself, or running it before the packages are published? Build once and point any project at the local checkout:
+
 ```bash
-# develop the monorepo
+git clone https://github.com/bharat3645/The-Ideal-Harness && cd The-Ideal-Harness
 pnpm install
-pnpm build      # turbo build across packages
-pnpm check      # type-check
-pnpm test       # node:test, zero test-framework dependencies
-pnpm validate   # the substrate validates its own repo
-pnpm biome:fix  # lint + format
+pnpm build                       # all engines (or: pnpm -r run build)
+pnpm test                        # node:test, zero test-framework deps
+pnpm validate                    # the substrate validates its own repo
+
+pnpm setup                       # wire the harness into THIS directory, or…
+pnpm setup /path/to/your/project # …any project — writes .claude/settings.json + .mcp.json
 ```
+
+`pnpm setup` is idempotent; restart the session and approve the MCP servers once.
+
+### Releasing (maintainers)
+
+```bash
+pnpm release:dry   # build + pack everything, no publish — inspect what ships
+pnpm release       # build + publish every @ideal-harness/* to npm (needs npm auth)
+```
+
+Tag `vX.Y.Z` to publish via CI (`.github/workflows/release.yml`, needs the `NPM_TOKEN` secret).
 
 ## Verification
 
-- **74 unit tests** on `node:test` with zero test-framework dependencies.
+- **112 unit tests** on `node:test` with zero test-framework dependencies.
 - Biome clean, fully type-checked.
 - CI runs biome + build + check + test + validate + a skill-threat self-scan on every change.
 - **Dogfooded.** The substrate validates its own repo; the code-graph indexes its own source.

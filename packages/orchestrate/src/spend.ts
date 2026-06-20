@@ -13,8 +13,17 @@ export interface SpendCheck {
 
 export class SpendGovernor {
   private used = 0;
+  private readonly capTokens: number | null;
 
-  constructor(private readonly capTokens: number | null = null) {}
+  constructor(capTokens: number | null = null) {
+    // Reject NaN/Infinity/negative caps loudly. A NaN cap (e.g. from a typo'd
+    // env var coerced via Number()) would make every `wouldExceed` comparison
+    // false and silently disable the cap — the exact failure we must prevent.
+    if (capTokens !== null && (!Number.isFinite(capTokens) || capTokens < 0)) {
+      throw new Error(`invalid spend cap: ${capTokens} (must be a non-negative finite number or null)`);
+    }
+    this.capTokens = capTokens;
+  }
 
   record(tokens: number): void {
     if (tokens < 0) {

@@ -19,8 +19,10 @@ async function main() {
   let context = '';
   try {
     const raw = await readFile(skillPath, 'utf8');
-    // Strip the frontmatter fence; inject the body only.
-    const body = raw.replace(/^---\n[\s\S]*?\n---\n/, '').trim();
+    // Strip the frontmatter fence; inject the body only. Tolerate a leading BOM
+    // and CRLF line endings (a Windows checkout must behave like a LF one) — an
+    // \n-only regex would otherwise leak the raw YAML frontmatter into context.
+    const body = raw.replace(/^﻿?---\r?\n[\s\S]*?\r?\n---\r?\n/, '').trim();
     context = `The Ideal Harness is active.\n\n${body}`;
   } catch {
     // Fail open: no bootstrap context rather than a broken session.

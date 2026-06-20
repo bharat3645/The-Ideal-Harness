@@ -25,3 +25,10 @@ test('isCompressed detects a marker', () => {
 test('retrieve returns undefined for an unknown marker', () => {
   assert.equal(new CcrStore().retrieve('<<ccr:ffffffffffffffff>>'), undefined);
 });
+
+test('retrieve tolerates an uppercased marker (LLM/copy-paste safe)', () => {
+  const store = new CcrStore();
+  const marker = store.stash('payload to recover');
+  const upper = marker.toUpperCase(); // <<CCR:....>>
+  assert.equal(store.retrieve(upper), 'payload to recover');
+});

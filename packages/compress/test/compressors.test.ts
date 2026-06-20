@@ -21,6 +21,19 @@ test('json array compression declines on small arrays', () => {
   assert.equal(compressJsonArray([1, 2, 3]), null);
 });
 
+test('error:0 is a success sentinel, not an anomaly — array still compresses', () => {
+  // Many APIs use error:0 to mean success. Treating it as anomalous would keep
+  // every row and defeat compression entirely.
+  const rows = Array.from({ length: 50 }, (_, i) => ({ id: i, error: 0 }));
+  const result = compressJsonArray(rows);
+  assert.notEqual(result, null, 'an all-success array should still sample down');
+  if (result === null) {
+    return;
+  }
+  assert.ok(result.omitted > 0);
+  assert.equal(result.anomaliesKept, 0);
+});
+
 test('log RLE collapses repeated templated lines', () => {
   const log = ['conn 1 ok', 'conn 2 ok', 'conn 3 ok', 'conn 4 ok', 'done'].join('\n');
   const result = compressLog(log);

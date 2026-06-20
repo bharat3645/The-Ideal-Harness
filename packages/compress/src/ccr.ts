@@ -9,7 +9,7 @@
 
 import { createHash } from 'node:crypto';
 
-export const CCR_MARKER = /<<ccr:([0-9a-f]{16})>>/g;
+export const CCR_MARKER = /<<ccr:([0-9a-f]{16})>>/gi;
 
 export function isCompressed(text: string): boolean {
   CCR_MARKER.lastIndex = 0;
@@ -28,11 +28,13 @@ export class CcrStore {
 
   /** Retrieve a stashed original by hash or by its `<<ccr:HASH>>` marker. */
   retrieve(hashOrMarker: string): string | undefined {
-    const match = hashOrMarker.match(/[0-9a-f]{16}/);
+    // Match case-insensitively and fold to lowercase: stored hashes are always
+    // lowercase, but a marker copied through an LLM or a user may arrive uppercased.
+    const match = hashOrMarker.match(/[0-9a-f]{16}/i);
     if (match === null) {
       return undefined;
     }
-    return this.store.get(match[0]);
+    return this.store.get(match[0].toLowerCase());
   }
 
   get size(): number {

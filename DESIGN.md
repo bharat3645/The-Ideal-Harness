@@ -108,6 +108,7 @@ Each capability has **exactly one** chosen mechanism. Losers are named so nothin
 - structural: graphify code-graph + token-budgeted subgraph retrieval (MCP).
 - episodic: claude-mem hook→XML-observation→SQLite-FTS5, retrieved by **BM25 (native FTS5) + int8-vector hybrid, fused with RRF** (claude-mem ships FTS5 but sorts by recency; we use the rank it already has + add a vector rerank — int8 idea take-parts'd from codebase-memory-mcp). hermes `curator` maintains it (reconcile claims vs tool-call evidence).
 - **L2 owns context-overflow persistence**: when L1 triggers a flush, the bytes land here, not in two places. *(ruflo memory-bridge rejected — graphify+FTS5 superior.)*
+- **Isolation by construction** (the global-install danger): memory binds to one workspace per process, persists project-local (`<root>/.ideal-harness/memory/`, never `$HOME`), fails closed to ephemeral when scope is unknown, stamps every record with a workspace key, and runs the guard floor on the boundary (redact-on-write, fence-on-read). No cross-project leakage. See the **Memory isolation contract** in IMPLEMENTATION.md.
 
 **L3 — Web & Research.** *One module, three sub-tools by axis (the adjudicated boundaries):*
 - interactive automation/debugging: chrome-devtools-mcp pattern (CDP + uid snapshot) via a gstack-/browse-style warm-Chromium daemon (atomic state, health auto-start, idle shutdown, ONNX/Haiku injection classifier).

@@ -42,6 +42,45 @@ function requireString(c: IssueCollector, obj: Record<string, unknown>, key: str
   return value;
 }
 
+// Object plugin sources and the field each kind requires (Claude Code marketplace schema).
+const SOURCE_KINDS: Record<string, readonly string[]> = {
+  github: ['repo'],
+  url: ['url'],
+  'git-subdir': ['url', 'path'],
+  npm: ['package'],
+};
+
+/** A plugin `source` is either a non-empty path string or a typed source object. */
+function validateSource(c: IssueCollector, entry: Record<string, unknown>, path: string): void {
+  const source = entry.source;
+  const sourcePath = `${path}.source`;
+  if (typeof source === 'string') {
+    if (source.trim().length === 0) {
+      c.error(sourcePath, 'must be a non-empty path string or a source object');
+    }
+    return;
+  }
+  if (!isRecord(source)) {
+    c.error(
+      sourcePath,
+      'must be a relative path string or a source object ({ "source": "npm"|"github"|"url"|"git-subdir", … })',
+    );
+    return;
+  }
+  const kind = typeof source.source === 'string' ? source.source : undefined;
+  const required = kind ? SOURCE_KINDS[kind] : undefined;
+  if (!required) {
+    c.error(`${sourcePath}.source`, `unknown source kind; expected one of ${Object.keys(SOURCE_KINDS).join(', ')}`);
+    return;
+  }
+  for (const field of required) {
+    const value = source[field];
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      c.error(`${sourcePath}.${field}`, `"${kind}" source requires a non-empty "${field}"`);
+    }
+  }
+}
+
 /** Validate a `SKILL.md` frontmatter object. */
 export function validateSkillFrontmatter(input: unknown, path = 'frontmatter'): ValidationReport {
   const c = new IssueCollector();
@@ -123,7 +162,7 @@ export function validateMarketplaceManifest(input: unknown, path = 'marketplace'
       return;
     }
     const name = requireString(c, entry, 'name', entryPath);
-    requireString(c, entry, 'source', entryPath);
+    validateSource(c, entry, entryPath);
     if (name !== undefined) {
       if (seen.has(name)) {
         c.error(`${entryPath}.name`, `duplicate plugin name "${name}"`);

@@ -4,6 +4,14 @@
   "type": "module",
   "description": "The Ideal Harness memory: a structural code-graph with token-budgeted subgraph retrieval, plus an episodic store with real BM25 relevance ranking and a curator that reconciles claims against tool-call evidence.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bharat3645/The-Ideal-Harness.git",
+    "directory": "packages/memory"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -17,10 +25,12 @@
     ".claude-plugin"
   ],
   "dependencies": {
-    "@ideal-harness/core": "workspace:*"
+    "@ideal-harness/core": "workspace:*",
+    "@ideal-harness/guard": "workspace:*"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "tsc -p tsconfig.test.json && node --test \"dist-test/test/**/*.test.js\"",
     "clean": "rm -rf dist dist-test"

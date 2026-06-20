@@ -27,6 +27,13 @@ export function parseCheckpoint(json: string): Checkpoint {
   if (typeof data.phase !== 'string' || typeof data.ledger !== 'string' || typeof data.ts !== 'number') {
     throw new Error('invalid checkpoint: missing phase/ledger/ts');
   }
+  // Validate the embedded ledger is parseable JSON now, at checkpoint-load time,
+  // rather than letting it throw lazily inside resumeFrom() much later.
+  try {
+    JSON.parse(data.ledger);
+  } catch {
+    throw new Error('invalid checkpoint: ledger is not valid JSON');
+  }
   return {
     phase: data.phase,
     ledger: data.ledger,

@@ -15,7 +15,9 @@ function isAnomalous(row: unknown): boolean {
     return false;
   }
   const r = row as Record<string, unknown>;
-  if ('error' in r && r.error !== null && r.error !== false && r.error !== '') {
+  // `error: 0` is a success sentinel in many APIs (gRPC, syscalls, DB drivers),
+  // so a zero error code is NOT an anomaly — only a truthy/non-empty error is.
+  if ('error' in r && r.error !== null && r.error !== false && r.error !== '' && r.error !== 0) {
     return true;
   }
   const status = r.status ?? r.statusCode ?? r.code;

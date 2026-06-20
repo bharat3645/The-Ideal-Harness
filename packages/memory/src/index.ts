@@ -12,9 +12,19 @@ export { type Bm25Doc, Bm25Index, type ScoredDoc, tokenize } from './episodic/bm
 export { type SearchHit, type SearchOptions, searchObservations } from './episodic/search.js';
 export {
   EpisodicStore,
+  filterByWorkspace,
   type Observation,
   type ObservationType,
   parseObservations,
 } from './episodic/store.js';
 export { type Confidence, type Edge, extractSymbols, type SymbolKind, type SymbolNode } from './structural/extract.js';
 export { CodeGraph, type SubgraphResult } from './structural/graph.js';
+export {
+  bindWorkspace,
+  deriveWorkspaceKey,
+  EPHEMERAL_WORKSPACE,
+  findWorkspaceRoot,
+  normalizeGitRemote,
+  resolveWorkspace,
+  type Workspace,
+} from './workspace.js';

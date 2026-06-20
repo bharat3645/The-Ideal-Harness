@@ -15,22 +15,42 @@ plugin with a Claude Code face (skills/hooks), a standalone MCP server, and a CL
   engine with Anthropic-aligned defaults, prompt-injection wrapping, always-on secret
   redaction, a scoped secrets broker, a skill-vetting scanner (signature DB +
   homoglyph/hidden-char detection), a drift-guard authority ladder (grep tier), and an
-  OS sandbox command builder (Seatbelt/bubblewrap) + subprocess env-scrub. PreToolUse /
-  PostToolUse hooks deliver automatic enforcement.
+  OS sandbox command builder (Seatbelt/bubblewrap) + subprocess env-scrub. The
+  PreToolUse hook makes policy + outbound-secret blocking automatic; the PostToolUse
+  hook **rewrites** every result (via `updatedToolOutput`) to mask secrets and fence
+  injected/external content before the model reads it. Sandbox, vetting, and drift-guard
+  ship as MCP tools / CLIs (hook auto-application is roadmapped).
 - **compress** — deterministic, prompt-cache-safe `tool_result` compression (anomaly-
   preserving JSON sampling, log RLE, stack-trace collapse) with a token gate, a
   Compress-Cache-Retrieve store for lossless recovery, and the caveman output-side
   terse mode.
 - **memory** — a structural code-graph with token-budgeted subgraph retrieval, plus an
   episodic store ranked by real BM25 relevance (not recency), kept honest by a curator
-  that reconciles claims against tool-call evidence.
+  that reconciles claims against tool-call evidence. **Isolation by construction:** the
+  server binds to one workspace at startup (no tool can target another project), persistence
+  is project-local (`<root>/.ideal-harness/memory/`, never `$HOME`), unresolved scope fails
+  closed to ephemeral, records are workspace-stamped, and the guard floor sits on the boundary
+  (redact-on-write, fence-on-read). No cross-project memory leakage, enforced below the model.
 - **orchestrate** — the control-flow pillar: durable task ledger, tool registry, loop /
   no-progress guard, spend governor, API retry/backoff, session resume/checkpoint, and
   the subagent-driven-development + brainstorming skills.
 
+### Packaging & distribution
+
+- **npm-backed plugin marketplace.** `marketplace.json` sources each plugin from its npm
+  package (`@ideal-harness/*`); the published tarball ships `dist/` + hooks + skills, so
+  `/plugin install` pulls working code into `${CLAUDE_PLUGIN_ROOT}` — no clone, no build,
+  no committed build artifacts. Plugins install at user scope → available in every project.
+- Every engine plugin declares its **MCP server in `plugin.json`** (`${CLAUDE_PLUGIN_ROOT}`),
+  so installing a plugin wires its tools — no manual `.mcp.json` editing.
+- `pnpm release` (build + `pnpm -r publish`) and a tag-triggered `release.yml` workflow;
+  `pnpm release:dry` to inspect tarballs without publishing.
+- Develop-from-source path: `pnpm setup [projectDir]` idempotently wires any project to one
+  built checkout (hooks → `.claude/settings.json`, servers → `.mcp.json`).
+
 ### Verification
 
-- 74 unit tests across the five packages (node:test, zero test-framework deps).
+- 112 unit tests across the five packages (node:test, zero test-framework deps).
 - CI: biome + type-check + build + tests + `ideal-harness validate` + skill threat self-scan.
 - Dogfooded: the substrate validates its own repo; the code-graph indexes its own source.
 

@@ -35,3 +35,13 @@ test('episodic search ranks by relevance, not recency', () => {
   // The newer-but-irrelevant note must not top relevant billing results.
   assert.notEqual(hits[0]?.observation.text, 'lunch options near the office');
 });
+
+test('a query with no indexable terms falls back to recency, not empty', () => {
+  const store = new EpisodicStore();
+  store.add({ type: 'note', text: 'older note', ts: 1 });
+  store.add({ type: 'note', text: 'newer note', ts: 100 });
+  // 'a' / 'is' tokenize away (single chars / stripped) -> degenerate query.
+  const hits = searchObservations(store.all(), 'a', { limit: 5 });
+  assert.equal(hits.length, 2, 'should return observations rather than nothing');
+  assert.equal(hits[0]?.observation.text, 'newer note', 'most recent first');
+});

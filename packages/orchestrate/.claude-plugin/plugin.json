@@ -4,5 +4,11 @@
   "description": "Orchestration & control flow: durable ledger, tool registry, loop-guard, spend governor, API retry, resume/checkpoint, plus subagent-driven-development and brainstorming skills.",
   "author": {
     "name": "Bharat"
+  },
+  "mcpServers": {
+    "ideal-harness-orchestrate": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli/index.js", "mcp"]
+    }
   }
 }

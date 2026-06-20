@@ -4,5 +4,11 @@
   "description": "Enforcement floor below the LLM: deny-wins policy, permission defaults, injection defense, secret redaction, skill vetting, drift-guard.",
   "author": {
     "name": "Bharat"
+  },
+  "mcpServers": {
+    "ideal-harness-guard": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli/index.js", "mcp"]
+    }
   }
 }

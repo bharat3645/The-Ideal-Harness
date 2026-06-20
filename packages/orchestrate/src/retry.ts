@@ -50,6 +50,11 @@ const realSleep = (ms: number): Promise<void> => new Promise((resolve) => setTim
 /** Run `fn`, retrying retryable failures with backoff. Re-throws fatal errors immediately. */
 export async function withRetry<T>(fn: () => Promise<T>, options: RetryOptions = {}): Promise<T> {
   const maxAttempts = options.maxAttempts ?? 4;
+  if (!Number.isInteger(maxAttempts) || maxAttempts < 1) {
+    // Without this guard, maxAttempts < 1 skips the loop and throws `undefined`,
+    // which a caller cannot meaningfully catch.
+    throw new RangeError(`withRetry: maxAttempts must be a positive integer, got ${maxAttempts}`);
+  }
   const classify = options.classify ?? classifyApiError;
   const sleep = options.sleep ?? realSleep;
   const schedule = backoffSchedule(maxAttempts, options.baseMs, options.maxMs);

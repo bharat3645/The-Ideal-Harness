@@ -30,9 +30,10 @@ export function wrapUntrusted(content: string, options: WrapOptions = {}): strin
 
 /** Heuristic: does this text contain an injection attempt directed at the agent? */
 const INJECTION_CUES = [
-  /ignore (?:all |the )?(?:previous|above|prior) instructions/i,
+  /(?:ignore|disregard|forget|discard) (?:all |the |any )?(?:previous|above|prior|earlier) instructions/i,
   /disregard (?:your|the) (?:system )?prompt/i,
-  /you are now (?:a|an|in) /i,
+  /override (?:your|the) (?:system )?(?:prompt|instructions)/i,
+  /(?:you are now|now you are) (?:a|an|in|the) /i,
   /\bnew instructions?\s*:/i,
   /reveal (?:your|the) (?:system prompt|instructions)/i,
   /print (?:your|the) (?:api[ _-]?key|secret|token)/i,
