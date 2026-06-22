@@ -78,6 +78,47 @@ test('SpendGovernor rejects a NaN/negative cap instead of silently disabling it'
   assert.throws(() => new SpendGovernor(-100), /invalid spend cap/);
 });
 
+test('SpendGovernor rejects a non-finite per-call spend instead of poisoning the total', () => {
+  const spend = new SpendGovernor(1000);
+  assert.equal(spend.check(Number('abc')).allowed, false, 'NaN spend must never be allowed');
+  assert.throws(() => spend.record(Number('abc')), /invalid spend/);
+  assert.throws(() => spend.record(Number.POSITIVE_INFINITY), /invalid spend/);
+  // The cap must still work after a rejected garbage spend.
+  spend.record(900);
+  assert.equal(spend.check(200).allowed, false);
+  assert.equal(spend.remaining(), 100);
+});
+
+test('spend_check rejects a non-numeric token count without disabling the cap', async () => {
+  const spend = new SpendGovernor(1000);
+  const tools = buildOrchestrateTools(new TaskLedger(), new LoopGuard(), spend);
+  const check = tools.find((t) => t.name === 'spend_check');
+  assert.ok(check);
+  const bad = await check.handler({ tokens: 'abc' });
+  assert.equal(bad.isError, true);
+  assert.match(bad.text, /invalid token count/);
+  assert.equal(spend.spent(), 0, 'a garbage spend must not be recorded');
+  // A valid spend afterwards is still gated normally.
+  const ok = await check.handler({ tokens: 999 });
+  assert.notEqual(ok.isError, true);
+  const blocked = await check.handler({ tokens: 2 });
+  assert.match(blocked.text, /"allowed":false/);
+});
+
+test('ledger_update rejects an unknown status instead of stranding the task', async () => {
+  const ledger = new TaskLedger();
+  const task = ledger.add('do work');
+  const tools = buildOrchestrateTools(ledger, new LoopGuard(), new SpendGovernor());
+  const update = tools.find((t) => t.name === 'ledger_update');
+  assert.ok(update);
+  const res = await update.handler({ id: task.id, status: 'blocked' });
+  assert.equal(res.isError, true);
+  assert.match(res.text, /invalid status/);
+  // The task keeps its valid status and stays reachable to nextPending().
+  assert.equal(ledger.get(task.id)?.status, 'pending');
+  assert.equal(ledger.nextPending()?.id, task.id);
+});
+
 test('ledger_add surfaces a persist failure instead of falsely reporting success', async () => {
   const tools = buildOrchestrateTools(new TaskLedger(), new LoopGuard(), new SpendGovernor(), () => ({
     ok: false,

@@ -26,8 +26,11 @@ export class SpendGovernor {
   }
 
   record(tokens: number): void {
-    if (tokens < 0) {
-      throw new Error('cannot record negative spend');
+    // Reject NaN/Infinity too, not just negatives: recording NaN would poison
+    // `used` forever (NaN + anything = NaN), making every later wouldExceed()
+    // comparison false and silently disabling the cap.
+    if (!Number.isFinite(tokens) || tokens < 0) {
+      throw new Error(`cannot record invalid spend: ${tokens} (must be a non-negative finite number)`);
     }
     this.used += tokens;
   }
@@ -46,6 +49,10 @@ export class SpendGovernor {
 
   /** Gate a prospective spend. Blocks (allowed:false) if it would exceed the cap. */
   check(tokens: number): SpendCheck {
+    // Deny-wins on garbage input: an invalid token count can never be "allowed".
+    if (!Number.isFinite(tokens) || tokens < 0) {
+      return { allowed: false, reason: `invalid token count: ${tokens}` };
+    }
     if (this.wouldExceed(tokens)) {
       return {
         allowed: false,

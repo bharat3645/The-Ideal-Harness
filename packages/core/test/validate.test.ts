@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, sep } from 'node:path';
 import { test } from 'node:test';
+import { validateProject } from '../src/cli/validate.js';
 import {
   validateMarketplaceManifest,
   validatePluginManifest,
@@ -35,6 +39,24 @@ test('marketplace manifest flags duplicate plugin names and missing source', () 
 
 test('marketplace manifest must have a plugins array', () => {
   assert.equal(validateMarketplaceManifest({ name: 'm' }).ok, false);
+});
+
+test('validateProject reports a correct relative path even when root has a trailing separator', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ih-validate-'));
+  try {
+    await mkdir(join(dir, 'packages'), { recursive: true });
+    // A SKILL.md with no leading frontmatter fence → a parse error tagged with its path.
+    await writeFile(join(dir, 'packages', 'SKILL.md'), '# no frontmatter\n');
+
+    const report = await validateProject(`${dir}${sep}`); // note the trailing separator
+    assert.equal(report.ok, false);
+    const issue = report.issues.find((i) => /frontmatter/.test(i.message));
+    assert.ok(issue, 'expected a frontmatter error for the malformed SKILL.md');
+    // Must be "packages/SKILL.md", not a mangled "ackages/SKILL.md".
+    assert.equal((issue?.path ?? '').replaceAll('\\', '/'), 'packages/SKILL.md');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('marketplace accepts object sources (npm/github) and rejects malformed ones', () => {

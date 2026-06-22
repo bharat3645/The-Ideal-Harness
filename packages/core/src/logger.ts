@@ -47,11 +47,13 @@ export function createLogger(options: LoggerOptions = {}): Logger {
     if (LEVEL_ORDER[recordLevel] < threshold) {
       return;
     }
+    // Spread caller-supplied fields FIRST so they can never clobber the record's
+    // own level/msg — those are authoritative and set last.
     const record: Record<string, unknown> = {
-      level: recordLevel,
-      msg: message,
       ...base,
       ...fields,
+      level: recordLevel,
+      msg: message,
     };
     if (options.name !== undefined) {
       record.logger = options.name;

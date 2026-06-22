@@ -7,7 +7,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createMcpServer, type McpTool, type McpToolResult } from '@ideal-harness/core';
-import { TaskLedger, type TaskStatus } from '../ledger.js';
+import { isTaskStatus, TASK_STATUSES, TaskLedger } from '../ledger.js';
 import { LoopGuard } from '../loopguard.js';
 import { SpendGovernor } from '../spend.js';
 
@@ -59,7 +59,16 @@ export function buildOrchestrateTools(
       handler: (args) => {
         const patch: Record<string, unknown> = {};
         if (args.status !== undefined) {
-          patch.status = String(args.status) as TaskStatus;
+          // Reject an unknown status at the boundary. Without this, an invalid
+          // status (e.g. "blocked") would make the task invisible to nextPending()
+          // and stick forever until a checkpoint reload repaired it.
+          if (!isTaskStatus(args.status)) {
+            return {
+              text: JSON.stringify({ error: `invalid status: ${String(args.status)}`, valid: TASK_STATUSES }),
+              isError: true,
+            };
+          }
+          patch.status = args.status;
         }
         if (args.artifact !== undefined) {
           patch.artifact = String(args.artifact);
@@ -90,6 +99,14 @@ export function buildOrchestrateTools(
       inputSchema: { type: 'object', properties: { tokens: { type: 'number' } }, required: ['tokens'] },
       handler: (args) => {
         const tokens = Number(args.tokens ?? 0);
+        // Validate before touching the governor: a non-numeric "tokens" (e.g. "abc")
+        // coerces to NaN, which would poison the spend total and disable the cap.
+        if (!Number.isFinite(tokens) || tokens < 0) {
+          return {
+            text: JSON.stringify({ allowed: false, reason: `invalid token count: ${String(args.tokens)}` }),
+            isError: true,
+          };
+        }
         const decision = spend.check(tokens);
         if (decision.allowed) {
           spend.record(tokens);

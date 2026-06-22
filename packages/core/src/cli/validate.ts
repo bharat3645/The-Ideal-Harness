@@ -4,7 +4,7 @@
  */
 
 import { readdir, readFile, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import type { ValidationIssue, ValidationReport } from '../schema/types.js';
 import {
   mergeReports,
@@ -89,7 +89,10 @@ export async function validateProject(root: string): Promise<ValidationReport> {
   for (const skillPath of await findSkillFiles(root)) {
     const content = await readFile(skillPath, 'utf8');
     const parsed = parseSkill(content);
-    const rel = skillPath.slice(root.length + 1);
+    // Use relative() rather than slicing by root.length: a root passed with a
+    // trailing separator (e.g. `validate ./project/`) would otherwise drop a
+    // leading character and report a mangled path like "ackages/SKILL.md".
+    const rel = relative(root, skillPath);
     if (!parsed.ok) {
       reports.push({ ok: false, issues: [{ severity: 'error', path: rel, message: parsed.error.message }] });
       continue;

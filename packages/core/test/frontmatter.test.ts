@@ -66,6 +66,19 @@ test('double-quoted values are unescaped as JSON (symmetric with serialization)'
   assert.equal(parsed.value.data.description, 'he said "hi"');
 });
 
+test('plain integers parse as numbers but leading-zero codes stay strings', () => {
+  const parsed = parseSkill('---\nname: x\ncount: 42\nzero: 0\nratio: 0.5\ncode: 007\npadded: "01"\n---\nbody');
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) {
+    return;
+  }
+  assert.equal(parsed.value.data.count, 42);
+  assert.equal(parsed.value.data.zero, 0);
+  assert.equal(parsed.value.data.ratio, 0.5);
+  assert.equal(parsed.value.data.code, '007', 'leading-zero codes must not coerce to 7');
+  assert.equal(parsed.value.data.padded, '01');
+});
+
 test('single-quoted values are literal with doubled-quote escapes', () => {
   const parsed = parseSkill("---\nname: x\ndescription: 'it''s fine'\n---\nbody");
   assert.equal(parsed.ok, true);

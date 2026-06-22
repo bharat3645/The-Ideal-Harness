@@ -10,6 +10,13 @@ test('git remotes normalize to the same identity across scp/https forms', () => 
   assert.equal(https, 'github.com/owner/repo');
 });
 
+test('ssh:// remotes with an embedded user normalize to the same identity as scp/https', () => {
+  const https = normalizeGitRemote('https://github.com/Owner/Repo.git');
+  const ssh = normalizeGitRemote('ssh://git@github.com/Owner/Repo.git');
+  assert.equal(ssh, https, 'ssh://git@host/… must not split a repo into a second namespace');
+  assert.equal(ssh, 'github.com/owner/repo');
+});
+
 test('workspace key prefers git identity, else a deterministic path hash', () => {
   const a = deriveWorkspaceKey({ gitRemote: 'git@github.com:o/r.git', root: '/x/y' });
   assert.equal(a, 'git:github.com/o/r');

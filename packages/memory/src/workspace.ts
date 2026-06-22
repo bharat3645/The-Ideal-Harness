@@ -39,8 +39,11 @@ export const EPHEMERAL_WORKSPACE: Workspace = {
 /** Normalize a git remote URL into a stable identity (scheme/credentials/suffix-insensitive). */
 export function normalizeGitRemote(remote: string): string {
   let s = remote.trim().toLowerCase();
-  s = s.replace(/^[a-z0-9._-]+@/, ''); // strip scp-style user@
+  // Strip the scheme FIRST so a user@ that sits after it (e.g. ssh://git@host/…)
+  // is also removed — otherwise that form would key differently from the scp and
+  // https forms of the same repo, splitting its memory across two namespaces.
   s = s.replace(/^[a-z][a-z0-9+.-]*:\/\//, ''); // strip scheme://
+  s = s.replace(/^[a-z0-9._-]+@/, ''); // strip user@ (scp-style or post-scheme)
   s = s.replace(':', '/'); // scp host:owner/repo → host/owner/repo
   s = s.replace(/\.git$/, '').replace(/\/+$/, '');
   return s;

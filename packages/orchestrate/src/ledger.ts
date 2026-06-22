@@ -7,7 +7,14 @@
  * controller's memory lives on disk, not in the context window.
  */
 
-export type TaskStatus = 'pending' | 'in_progress' | 'done' | 'failed';
+/** The only valid task statuses. Shared so the MCP boundary and parse() agree. */
+export const TASK_STATUSES = ['pending', 'in_progress', 'done', 'failed'] as const;
+export type TaskStatus = (typeof TASK_STATUSES)[number];
+
+/** Type guard for an untrusted status string crossing the MCP boundary. */
+export function isTaskStatus(value: unknown): value is TaskStatus {
+  return typeof value === 'string' && (TASK_STATUSES as readonly string[]).includes(value);
+}
 
 export interface LedgerTask {
   readonly id: string;
@@ -66,7 +73,6 @@ export class TaskLedger {
   static parse(json: string): TaskLedger {
     const data = JSON.parse(json) as { counter?: number; tasks?: unknown[] };
     const ledger = new TaskLedger();
-    const STATUSES: readonly TaskStatus[] = ['pending', 'in_progress', 'done', 'failed'];
     for (const raw of data.tasks ?? []) {
       if (raw === null || typeof raw !== 'object') {
         continue; // skip corrupt entries rather than admit a malformed task
@@ -77,7 +83,7 @@ export class TaskLedger {
       }
       // A task with a missing/invalid status would be unreachable to nextPending()
       // and stick forever — default it to 'pending' so a resume can pick it up.
-      const status: TaskStatus = STATUSES.includes(t.status as TaskStatus) ? (t.status as TaskStatus) : 'pending';
+      const status: TaskStatus = isTaskStatus(t.status) ? t.status : 'pending';
       ledger.tasks.push({
         id: t.id,
         title: t.title,

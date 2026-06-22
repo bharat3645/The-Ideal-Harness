@@ -61,7 +61,10 @@ function parseScalar(raw: string): unknown {
   if (value.length >= 2 && value.startsWith("'") && value.endsWith("'")) {
     return value.slice(1, -1).replaceAll("''", "'");
   }
-  if (/^-?\d+(?:\.\d+)?$/.test(value)) {
+  // Numbers, but NOT leading-zero forms ("01", "007"): those are zero-padded
+  // identifiers/codes whose leading zeros carry meaning, so keep them as strings
+  // rather than silently coercing to 1 / 7 and losing information.
+  if (/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value)) {
     return Number(value);
   }
   return value;
