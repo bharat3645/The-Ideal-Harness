@@ -101,6 +101,10 @@ These are the rest of the floor and the engines. They are real, deterministic co
 
 On Tier 2 (any MCP host) every item in **both** lists is reachable as the same MCP servers / CLIs; only the automatic hook application above is Claude-Code-specific.
 
+## Context-budget statusline (Tier 1)
+
+Claude Code's bottom line carries a live context-window meter — `IH <used>/<window> <pct>%` (e.g. `IH 142k/1M 14%`) — showing the tokens spent and the share of the model's **total context window** they occupy. It advises `⚠ consider /compact or /clear` past 14% and `⚠ /compact or /clear for better results` past 17%, with a `· filling fast` flag when a single turn adds a lot. It is **display + advice only**: Claude Code exposes no hook to force `/compact` mid-session, so the harness never auto-compacts. The advisory band is a *soft* quality line — answers degrade as the window fills — **not** the model's hard limit; native auto-compact stays the hard-limit backstop, and `compress`'s tool-result shrinking slows the fill. The window is **not hardcoded** — the hook reads the active model's real window from Claude Code's `context_window.context_window_size` (200k by default, 1M for extended-context models), so the percentage is correct on whatever model you run; `IDEAL_HARNESS_BUDGET_WINDOW` overrides it and ~1M is only a fallback when the host reports no window. The classification is pure, unit-tested logic in `compress`; the statusline hook reads tokens spent + window straight from Claude Code (or falls back to the transcript) and fails open to `IH —`.
+
 ## Principles
 
 - **Enforce below the model.** Every safety and scope rule is deterministic code — a hook, a gate, a scanner — never a polite request in a prompt.
@@ -188,7 +192,7 @@ Tag `vX.Y.Z` to publish via CI (`.github/workflows/release.yml`, needs the `NPM_
 
 ## Verification
 
-- **112 unit tests** on `node:test` with zero test-framework dependencies.
+- **130 unit tests** on `node:test` with zero test-framework dependencies.
 - Biome clean, fully type-checked.
 - CI runs biome + build + check + test + validate + a skill-threat self-scan on every change.
 - **Dogfooded.** The substrate validates its own repo; the code-graph indexes its own source.

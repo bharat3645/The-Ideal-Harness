@@ -65,6 +65,12 @@ settings.hooks.PostToolUse = replaceOurs(settings.hooks.PostToolUse, {
   matcher: '*',
   hooks: [{ type: 'command', command: hookCmd('guard', 'posttooluse.mjs') }],
 });
+// statusLine: the compress module's context-window meter. Claim the slot only if it is
+// empty or already ours (mine()) — a foreign statusline is never clobbered, mirroring replaceOurs.
+const ourStatusLine = { type: 'command', command: hookCmd('compress', 'statusline.mjs') };
+if (!settings.statusLine || mine(settings.statusLine)) {
+  settings.statusLine = ourStatusLine;
+}
 writeJson(settingsPath, settings);
 
 // ---- .mcp.json : engine MCP servers ----
@@ -80,3 +86,4 @@ console.log(`Wired The Ideal Harness (${ROOT_POSIX}) into:\n  ${target}`);
 console.log('\nNext:');
 console.log('  1. Restart the Claude Code session in that project (hooks load at session start).');
 console.log('  2. Approve the 4 ideal-harness MCP servers when prompted (one-time trust gate).');
+console.log('  3. The bottom statusline now shows the context-window meter (IH <used>/<window> <pct>%).');

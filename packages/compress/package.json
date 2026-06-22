@@ -23,6 +23,7 @@
   "files": [
     "dist",
     "skills",
+    "hooks",
     ".claude-plugin"
   ],
   "dependencies": {

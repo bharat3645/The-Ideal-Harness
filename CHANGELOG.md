@@ -23,7 +23,11 @@ plugin with a Claude Code face (skills/hooks), a standalone MCP server, and a CL
 - **compress** — deterministic, prompt-cache-safe `tool_result` compression (anomaly-
   preserving JSON sampling, log RLE, stack-trace collapse) with a token gate, a
   Compress-Cache-Retrieve store for lossless recovery, and the caveman output-side
-  terse mode.
+  terse mode. Also ships a **context-window statusline**: pure, unit-tested budget
+  classification (`analyzeBudget` / `formatStatusline`) behind a fail-open Claude Code
+  statusLine hook that reads the transcript and reports tokens spent plus the share of
+  the model's total context window (`IH 142k/1M 14%`), advising `/compact or /clear` past
+  14% (more strongly past 17%). Display + advise only — no hook can force `/compact`.
 - **memory** — a structural code-graph with token-budgeted subgraph retrieval, plus an
   episodic store ranked by real BM25 relevance (not recency), kept honest by a curator
   that reconciles claims against tool-call evidence. **Isolation by construction:** the
@@ -50,7 +54,7 @@ plugin with a Claude Code face (skills/hooks), a standalone MCP server, and a CL
 
 ### Verification
 
-- 112 unit tests across the five packages (node:test, zero test-framework deps).
+- 130 unit tests across the five packages (node:test, zero test-framework deps).
 - CI: biome + type-check + build + tests + `ideal-harness validate` + skill threat self-scan.
 - Dogfooded: the substrate validates its own repo; the code-graph indexes its own source.
 

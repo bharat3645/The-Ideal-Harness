@@ -7,6 +7,20 @@
  * the lossy step recoverable. Output-side terse mode ships as the caveman skill.
  */
 
+export {
+  type AnalyzeBudgetInput,
+  analyzeBudget,
+  type BudgetAnalysis,
+  type BudgetZone,
+  DANGER_RATIO,
+  DEFAULT_WINDOW,
+  FAST_DELTA,
+  type FormatStatuslineOptions,
+  formatStatusline,
+  formatTokens,
+  resolveWindow,
+  WARN_RATIO,
+} from './budget.js';
 export { CCR_MARKER, CcrStore, isCompressed } from './ccr.js';
 export { compressStackTrace, type ErrorCompression } from './compressors/errors.js';
 export { compressJsonArray, type JsonCompression } from './compressors/json.js';
