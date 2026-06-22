@@ -10,19 +10,12 @@
  */
 
 import { readFile } from 'node:fs/promises';
+import { readStdin, runCli } from '@ideal-harness/core';
 import { DEFAULT_RULES } from '../policy/defaults.js';
 import { evaluate } from '../policy/engine.js';
 import { redactSecrets } from '../redact.js';
 import { startGuardMcp } from '../runtime/mcp.js';
 import { scanSkill } from '../vet/scan.js';
-
-async function readStdin(): Promise<string> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of process.stdin) {
-    chunks.push(chunk as Buffer);
-  }
-  return Buffer.concat(chunks).toString('utf8');
-}
 
 async function main(): Promise<number> {
   const [, , command, ...rest] = process.argv;
@@ -62,11 +55,4 @@ async function main(): Promise<number> {
   }
 }
 
-main()
-  .then((code) => {
-    process.exitCode = code;
-  })
-  .catch((error: unknown) => {
-    process.stderr.write(`ideal-harness-guard: ${error instanceof Error ? error.message : String(error)}\n`);
-    process.exitCode = 1;
-  });
+runCli('ideal-harness-guard', main);

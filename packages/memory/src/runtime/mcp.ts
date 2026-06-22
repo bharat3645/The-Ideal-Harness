@@ -4,7 +4,7 @@
  * observations written via `memory_write` are recalled via `memory_search`.
  */
 
-import { createMcpServer, type McpTool } from '@ideal-harness/core';
+import { asNumber, asString, createMcpServer, HARNESS_VERSION, type McpTool } from '@ideal-harness/core';
 import { redactSecrets, wrapUntrusted } from '@ideal-harness/guard';
 import { reconcileClaims, type ToolCallEvidence } from '../curator.js';
 import { searchObservations } from '../episodic/search.js';
@@ -23,8 +23,9 @@ export function buildMemoryTools(graph: CodeGraph, store: EpisodicStore): McpToo
         required: ['path', 'content'],
       },
       handler: (args) => {
-        graph.addFile(String(args.path), String(args.content ?? ''));
-        return { text: JSON.stringify({ indexed: String(args.path), nodes: graph.allNodes().length }) };
+        const path = asString(args, 'path');
+        graph.addFile(path, asString(args, 'content', ''));
+        return { text: JSON.stringify({ indexed: path, nodes: graph.allNodes().length }) };
       },
     },
     {
@@ -36,7 +37,7 @@ export function buildMemoryTools(graph: CodeGraph, store: EpisodicStore): McpToo
         required: ['query'],
       },
       handler: (args) => {
-        const result = graph.querySubgraph(String(args.query ?? ''), Number(args.tokenBudget ?? 2000));
+        const result = graph.querySubgraph(asString(args, 'query', ''), asNumber(args, 'tokenBudget', 2000));
         return { text: result.text };
       },
     },
@@ -56,11 +57,11 @@ export function buildMemoryTools(graph: CodeGraph, store: EpisodicStore): McpToo
         // Redact secrets BEFORE they are persisted. A secret in long-term memory
         // that auto-injects into future sessions is the exact nightmare we refuse
         // to create — mask it at the write boundary, below the model.
-        const { text: safe, count } = redactSecrets(String(args.text ?? ''));
+        const { text: safe, count } = redactSecrets(asString(args, 'text', ''));
         const record = store.add({
-          type: String(args.type) as ObservationType,
+          type: asString(args, 'type') as ObservationType,
           text: safe,
-          ts: Number(args.ts),
+          ts: asNumber(args, 'ts'),
         });
         return { text: JSON.stringify({ ...record, redactedSecrets: count }) };
       },
@@ -74,7 +75,9 @@ export function buildMemoryTools(graph: CodeGraph, store: EpisodicStore): McpToo
         required: ['query'],
       },
       handler: (args) => {
-        const hits = searchObservations(store.all(), String(args.query ?? ''), { limit: Number(args.limit ?? 10) });
+        const hits = searchObservations(store.all(), asString(args, 'query', ''), {
+          limit: asNumber(args, 'limit', 10),
+        });
         // Recalled memory is untrusted: it may carry instructions written in a
         // past session. Fence it so the model treats it as data, not commands.
         return { text: wrapUntrusted(JSON.stringify(hits), { source: 'memory' }) };
@@ -114,7 +117,7 @@ export function startMemoryMcp(): Promise<void> {
   const store = new EpisodicStore(ws.key);
   return createMcpServer({
     name: 'ideal-harness-memory',
-    version: '0.1.0',
+    version: HARNESS_VERSION,
     tools: buildMemoryTools(graph, store),
   }).listen();
 }

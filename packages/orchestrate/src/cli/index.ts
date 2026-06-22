@@ -6,6 +6,7 @@
  *   mcp     start the orchestrate MCP server (stdio). Spend cap via IDEAL_HARNESS_SPEND_CAP.
  */
 
+import { runCli } from '@ideal-harness/core';
 import { startOrchestrateMcp } from '../runtime/mcp.js';
 
 async function main(): Promise<number> {
@@ -20,11 +21,4 @@ async function main(): Promise<number> {
   }
 }
 
-main()
-  .then((code) => {
-    process.exitCode = code;
-  })
-  .catch((error: unknown) => {
-    process.stderr.write(`ideal-harness-orchestrate: ${error instanceof Error ? error.message : String(error)}\n`);
-    process.exitCode = 1;
-  });
+runCli('ideal-harness-orchestrate', main);

@@ -7,16 +7,9 @@
  *   compress      compress stdin, print the result to stdout
  */
 
+import { readStdin, runCli } from '@ideal-harness/core';
 import { compressToolResult } from '../detect.js';
 import { startCompressMcp } from '../runtime/mcp.js';
-
-async function readStdin(): Promise<string> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of process.stdin) {
-    chunks.push(chunk as Buffer);
-  }
-  return Buffer.concat(chunks).toString('utf8');
-}
 
 async function main(): Promise<number> {
   const [, , command] = process.argv;
@@ -38,11 +31,4 @@ async function main(): Promise<number> {
   }
 }
 
-main()
-  .then((code) => {
-    process.exitCode = code;
-  })
-  .catch((error: unknown) => {
-    process.stderr.write(`ideal-harness-compress: ${error instanceof Error ? error.message : String(error)}\n`);
-    process.exitCode = 1;
-  });
+runCli('ideal-harness-compress', main);

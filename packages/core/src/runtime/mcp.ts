@@ -41,6 +41,21 @@ interface JsonRpcRequest {
   readonly params?: Record<string, unknown>;
 }
 
+/**
+ * Coerce an MCP tool argument to a string. With `fallback`, a nullish value
+ * yields the fallback (`String(args[key] ?? fallback)`); without it, the value
+ * is coerced directly (`String(args[key])`) — matching how required vs.
+ * defaulted fields were handled inline across the engines' MCP faces.
+ */
+export function asString(args: Record<string, unknown>, key: string, fallback?: string): string {
+  return fallback === undefined ? String(args[key]) : String(args[key] ?? fallback);
+}
+
+/** Coerce an MCP tool argument to a number. Mirrors {@link asString}'s fallback semantics. */
+export function asNumber(args: Record<string, unknown>, key: string, fallback?: number): number {
+  return fallback === undefined ? Number(args[key]) : Number(args[key] ?? fallback);
+}
+
 export function createMcpServer(options: McpServerOptions): { listen: () => Promise<void> } {
   const output = options.output ?? process.stdout;
   const input = options.input ?? process.stdin;

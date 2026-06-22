@@ -8,6 +8,7 @@
  */
 
 import { runGenHosts } from './gen-hosts.js';
+import { runCli } from './runtime.js';
 import { runValidate } from './validate.js';
 
 async function main(): Promise<number> {
@@ -28,11 +29,4 @@ async function main(): Promise<number> {
   }
 }
 
-main()
-  .then((code) => {
-    process.exitCode = code;
-  })
-  .catch((error: unknown) => {
-    process.stderr.write(`ideal-harness: ${error instanceof Error ? error.message : String(error)}\n`);
-    process.exitCode = 1;
-  });
+runCli('ideal-harness', main);

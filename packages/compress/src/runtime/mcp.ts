@@ -3,7 +3,7 @@
  * `compress_tool_result` can stash originals that `ccr_retrieve` later pulls back.
  */
 
-import { createMcpServer, type McpTool } from '@ideal-harness/core';
+import { asString, createMcpServer, HARNESS_VERSION, type McpTool } from '@ideal-harness/core';
 import { CcrStore } from '../ccr.js';
 import { compressToolResult } from '../detect.js';
 
@@ -19,7 +19,7 @@ export function buildCompressTools(store: CcrStore): McpTool[] {
         required: ['content'],
       },
       handler: (args) => {
-        const result = compressToolResult(String(args.content ?? ''), { store, recoverable: true });
+        const result = compressToolResult(asString(args, 'content', ''), { store, recoverable: true });
         return { text: JSON.stringify(result) };
       },
     },
@@ -32,7 +32,7 @@ export function buildCompressTools(store: CcrStore): McpTool[] {
         required: ['marker'],
       },
       handler: (args) => {
-        const original = store.retrieve(String(args.marker ?? ''));
+        const original = store.retrieve(asString(args, 'marker', ''));
         if (original === undefined) {
           return { text: 'not found (the marker may be from a previous session)', isError: true };
         }
@@ -46,7 +46,7 @@ export function startCompressMcp(): Promise<void> {
   const store = new CcrStore();
   return createMcpServer({
     name: 'ideal-harness-compress',
-    version: '0.1.0',
+    version: HARNESS_VERSION,
     tools: buildCompressTools(store),
   }).listen();
 }

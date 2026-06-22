@@ -9,6 +9,7 @@
 
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { extname, join } from 'node:path';
+import { runCli } from '@ideal-harness/core';
 import { startMemoryMcp } from '../runtime/mcp.js';
 import { CodeGraph } from '../structural/graph.js';
 
@@ -58,11 +59,4 @@ async function main(): Promise<number> {
   }
 }
 
-main()
-  .then((code) => {
-    process.exitCode = code;
-  })
-  .catch((error: unknown) => {
-    process.stderr.write(`ideal-harness-memory: ${error instanceof Error ? error.message : String(error)}\n`);
-    process.exitCode = 1;
-  });
+runCli('ideal-harness-memory', main);

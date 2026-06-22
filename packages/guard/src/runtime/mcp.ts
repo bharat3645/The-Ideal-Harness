@@ -3,7 +3,7 @@
  * MCP-capable host (not just Claude Code) can call them (Tier-2 portability).
  */
 
-import { createMcpServer, type McpTool } from '@ideal-harness/core';
+import { asString, createMcpServer, HARNESS_VERSION, type McpTool } from '@ideal-harness/core';
 import { type SourceFile, verifyPlan } from '../drift.js';
 import { DEFAULT_RULES } from '../policy/defaults.js';
 import { evaluate } from '../policy/engine.js';
@@ -26,7 +26,7 @@ export function buildGuardTools(): McpTool[] {
       },
       handler: (args) => {
         const request: ToolRequest = {
-          tool: String(args.tool),
+          tool: asString(args, 'tool'),
           input: (args.input as Record<string, unknown>) ?? {},
         };
         return { text: JSON.stringify(evaluate(request, DEFAULT_RULES)) };
@@ -41,7 +41,7 @@ export function buildGuardTools(): McpTool[] {
         required: ['content'],
       },
       handler: (args) => {
-        const result = scanSkill(String(args.content ?? ''));
+        const result = scanSkill(asString(args, 'content', ''));
         return { text: JSON.stringify(result), isError: !result.ok };
       },
     },
@@ -73,11 +73,11 @@ export function buildGuardTools(): McpTool[] {
         properties: { text: { type: 'string' } },
         required: ['text'],
       },
-      handler: (args) => ({ text: JSON.stringify(redactSecrets(String(args.text ?? ''))) }),
+      handler: (args) => ({ text: JSON.stringify(redactSecrets(asString(args, 'text', ''))) }),
     },
   ];
 }
 
 export function startGuardMcp(): Promise<void> {
-  return createMcpServer({ name: 'ideal-harness-guard', version: '0.1.0', tools: buildGuardTools() }).listen();
+  return createMcpServer({ name: 'ideal-harness-guard', version: HARNESS_VERSION, tools: buildGuardTools() }).listen();
 }

@@ -6,8 +6,17 @@
  * module builds on.
  */
 
+export { readStdin, runCli } from './cli/runtime.js';
 export { createLogger, type LogFields, type Logger, type LoggerOptions, type LogLevel } from './logger.js';
 export { type Err, err, isErr, isOk, mapOk, type Ok, ok, type Result, unwrap } from './result.js';
-export { createMcpServer, type McpServerOptions, type McpTool, type McpToolResult } from './runtime/mcp.js';
+export {
+  asNumber,
+  asString,
+  createMcpServer,
+  type McpServerOptions,
+  type McpTool,
+  type McpToolResult,
+} from './runtime/mcp.js';
 export * from './schema/index.js';
 export * from './skills/index.js';
+export { HARNESS_VERSION } from './version.js';

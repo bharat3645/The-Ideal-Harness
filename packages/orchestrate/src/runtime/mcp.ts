@@ -6,7 +6,14 @@
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { createMcpServer, type McpTool, type McpToolResult } from '@ideal-harness/core';
+import {
+  asNumber,
+  asString,
+  createMcpServer,
+  HARNESS_VERSION,
+  type McpTool,
+  type McpToolResult,
+} from '@ideal-harness/core';
 import { isTaskStatus, TASK_STATUSES, TaskLedger } from '../ledger.js';
 import { LoopGuard } from '../loopguard.js';
 import { SpendGovernor } from '../spend.js';
@@ -41,7 +48,7 @@ export function buildOrchestrateTools(
       name: 'ledger_add',
       description: 'Add a task to the durable ledger. Returns the created task.',
       inputSchema: { type: 'object', properties: { title: { type: 'string' } }, required: ['title'] },
-      handler: (args) => withPersist(ledger.add(String(args.title ?? ''))),
+      handler: (args) => withPersist(ledger.add(asString(args, 'title', ''))),
     },
     {
       name: 'ledger_update',
@@ -64,19 +71,19 @@ export function buildOrchestrateTools(
           // and stick forever until a checkpoint reload repaired it.
           if (!isTaskStatus(args.status)) {
             return {
-              text: JSON.stringify({ error: `invalid status: ${String(args.status)}`, valid: TASK_STATUSES }),
+              text: JSON.stringify({ error: `invalid status: ${asString(args, 'status')}`, valid: TASK_STATUSES }),
               isError: true,
             };
           }
           patch.status = args.status;
         }
         if (args.artifact !== undefined) {
-          patch.artifact = String(args.artifact);
+          patch.artifact = asString(args, 'artifact');
         }
         if (args.notes !== undefined) {
-          patch.notes = String(args.notes);
+          patch.notes = asString(args, 'notes');
         }
-        return withPersist(ledger.update(String(args.id), patch));
+        return withPersist(ledger.update(asString(args, 'id'), patch));
       },
     },
     {
@@ -91,19 +98,19 @@ export function buildOrchestrateTools(
       name: 'loop_check',
       description: 'Record an action signature; returns whether the agent appears stalled (looping).',
       inputSchema: { type: 'object', properties: { signature: { type: 'string' } }, required: ['signature'] },
-      handler: (args) => ({ text: JSON.stringify(loop.record(String(args.signature ?? ''))) }),
+      handler: (args) => ({ text: JSON.stringify(loop.record(asString(args, 'signature', ''))) }),
     },
     {
       name: 'spend_check',
       description: 'Gate a prospective token spend against the cap, and record it if allowed.',
       inputSchema: { type: 'object', properties: { tokens: { type: 'number' } }, required: ['tokens'] },
       handler: (args) => {
-        const tokens = Number(args.tokens ?? 0);
+        const tokens = asNumber(args, 'tokens', 0);
         // Validate before touching the governor: a non-numeric "tokens" (e.g. "abc")
         // coerces to NaN, which would poison the spend total and disable the cap.
         if (!Number.isFinite(tokens) || tokens < 0) {
           return {
-            text: JSON.stringify({ allowed: false, reason: `invalid token count: ${String(args.tokens)}` }),
+            text: JSON.stringify({ allowed: false, reason: `invalid token count: ${asString(args, 'tokens')}` }),
             isError: true,
           };
         }
@@ -176,5 +183,5 @@ export function startOrchestrateMcp(): Promise<void> {
   process.stderr.write(`ideal-harness-orchestrate: ledger ${ledgerPath} (${ledger.all().length} task(s) loaded)\n`);
 
   const tools = buildOrchestrateTools(ledger, new LoopGuard(), new SpendGovernor(resolveSpendCap()), persist);
-  return createMcpServer({ name: 'ideal-harness-orchestrate', version: '0.1.0', tools }).listen();
+  return createMcpServer({ name: 'ideal-harness-orchestrate', version: HARNESS_VERSION, tools }).listen();
 }
