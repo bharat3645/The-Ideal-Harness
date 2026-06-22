@@ -102,6 +102,7 @@ Each capability has **exactly one** chosen mechanism. Losers are named so nothin
 - offload: *trigger* a flush to L2 memory (retrieve-not-recall). L1 only triggers; **L2 owns the store** (no duplication).
 - error-compression (12-factor #9): collapse stack traces / repeated tool errors into a one-line cause + count before they re-enter context.
 - Emulate Claude Code's progressive compaction + pre-compaction flush to memory file. *(LMCache rejected — wrong layer.)*
+- context-budget statusline *(added during the v0.1 build, not in the original draft)*: a fail-open statusLine meter showing tokens spent vs the model's full context window (read live from Claude Code), advising `/compact` | `/clear` before quality degrades — serves pillar #1 (compaction awareness). Display + advise only; no hook can force `/compact`.
 - **L1 owns NO safety control.** Secret redaction lives in L6 (always-on), never gated behind a compression toggle.
 
 **L2 — Memory.** *One module, two stores, no overlap:*

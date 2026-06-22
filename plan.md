@@ -120,7 +120,7 @@ verified); README + CLAUDE.md carry the honest display-only note.
 | Step | Command |
 |---|---|
 | Build (topological) | `corepack pnpm -r run build` |
-| Tests (112 + new) | `corepack pnpm -r run test` |
+| Tests (130 across 5 packages) | `corepack pnpm -r run test` |
 | Substrate self-validate | `corepack pnpm validate` |
 | Lint/format | `corepack pnpm biome` |
 | Phase 2 hook smoke test | pipe fake `{"transcript_path":…,"session_id":"t"}` into `node packages/compress/hooks/statusline.mjs` |

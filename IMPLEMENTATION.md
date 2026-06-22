@@ -14,6 +14,7 @@ This file is the original PLAN; a few items below describe the v0.2 target, not 
 - **Orchestrate — CLI:** exposes `mcp` only. `plan` / `execute` / `resume` exist as library functions (ledger / checkpoint), not CLI subcommands yet.
 - **Orchestrate — ledger:** serialize/parse + checkpoint round-trip are implemented and tested, but the module does no file I/O — durable persistence is the **caller's** responsibility (persist the checkpoint blob) until v0.2 wires it.
 - **Orchestrate — skills:** `subagent-driven-development` and `brainstorming` ship as SKILL.md. **`autoplan` is not shipped** in v0.1.
+- **Compress — context-window statusline (added beyond this plan):** compress also ships a **statusLine meter** not in the original spec — pure, unit-tested budget logic (`analyzeBudget` / `formatStatusline` in `src/budget.ts`) behind a fail-open hook (`hooks/statusline.mjs`) that reads the live context window Claude Code reports (`context_window.context_window_size`) and renders `IH <used>/<window> <pct>%`, advising `/compact` or `/clear` as the window fills. Display + advise only — no hook can force `/compact`.
 
 The contracts are stable; the engines behind them sharpen in v0.2.
 
