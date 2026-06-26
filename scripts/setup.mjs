@@ -23,15 +23,15 @@ const HARNESS_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ROOT_POSIX = HARNESS_ROOT.replaceAll('\\', '/');
 const target = resolve(process.argv[2] ?? process.cwd());
 
-// Preflight: the engines must be built (hooks import from dist/, CLIs live in dist/).
-if (!existsSync(join(HARNESS_ROOT, 'packages/guard/dist/index.js'))) {
-  console.error('The Ideal Harness is not built yet. Run:\n  corepack pnpm -r run build\nthen re-run this script.');
+// Preflight: the package must be built (hooks import from dist/, CLIs live in dist/).
+if (!existsSync(join(HARNESS_ROOT, 'dist/guard/index.js'))) {
+  console.error('The Ideal Harness is not built yet. Run:\n  corepack pnpm run build\nthen re-run this script.');
   process.exit(1);
 }
 
 const posix = (...p) => join(...p).replaceAll('\\', '/');
-const hookCmd = (pkg, file) => `node "${posix(HARNESS_ROOT, 'packages', pkg, 'hooks', file)}"`;
-const cliPath = (pkg) => posix(HARNESS_ROOT, 'packages', pkg, 'dist/cli/index.js');
+const hookCmd = (file) => `node "${posix(HARNESS_ROOT, 'hooks', file)}"`;
+const cliPath = (pkg) => posix(HARNESS_ROOT, 'dist', pkg, 'cli/index.js');
 
 const readJson = (p) => {
   try {
@@ -55,19 +55,19 @@ const settingsPath = join(target, '.claude', 'settings.json');
 const settings = readJson(settingsPath);
 settings.hooks ??= {};
 settings.hooks.SessionStart = replaceOurs(settings.hooks.SessionStart, {
-  hooks: [{ type: 'command', command: hookCmd('core', 'session-start.mjs') }],
+  hooks: [{ type: 'command', command: hookCmd('session-start.mjs') }],
 });
 settings.hooks.PreToolUse = replaceOurs(settings.hooks.PreToolUse, {
   matcher: '*',
-  hooks: [{ type: 'command', command: hookCmd('guard', 'pretooluse.mjs') }],
+  hooks: [{ type: 'command', command: hookCmd('pretooluse.mjs') }],
 });
 settings.hooks.PostToolUse = replaceOurs(settings.hooks.PostToolUse, {
   matcher: '*',
-  hooks: [{ type: 'command', command: hookCmd('guard', 'posttooluse.mjs') }],
+  hooks: [{ type: 'command', command: hookCmd('posttooluse.mjs') }],
 });
 // statusLine: the compress module's context-window meter. Claim the slot only if it is
 // empty or already ours (mine()) — a foreign statusline is never clobbered, mirroring replaceOurs.
-const ourStatusLine = { type: 'command', command: hookCmd('compress', 'statusline.mjs') };
+const ourStatusLine = { type: 'command', command: hookCmd('statusline.mjs') };
 if (!settings.statusLine || mine(settings.statusLine)) {
   settings.statusLine = ourStatusLine;
 }

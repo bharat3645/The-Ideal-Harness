@@ -19,7 +19,7 @@ This file is the original PLAN; a few items below describe the v0.2 target, not 
 The contracts are stable; the engines behind them sharpen in v0.2.
 
 ## Tech stack (decided)
-- **pnpm workspaces + Turborepo + Biome + TypeScript** — mirrors the Voraxx toolchain the user already runs (proven, familiar) and matches the CC-plugin ecosystem (gstack/gsd-core/addyosmani are TS/markdown).
+- **TypeScript + Biome, built with `tsc`** — matches the CC-plugin ecosystem (gstack/gsd-core/addyosmani are TS/markdown). v0.1 began as a pnpm-workspaces + Turborepo monorepo (one package per module); the five packages were later consolidated into a single `ideal-harness` package (`src/<module>/` → `dist/<module>/`). See the CHANGELOG.
 - Single-language for v0.1 coherence: TS everywhere. Tree-sitter via `web-tree-sitter` (WASM) so the code-graph engine stays in-process, no Python sidecar.
 - Tests: `node:test` + `node --test` (zero test-framework dep — same policy as Voraxx, respects package release-age rule).
 - Each engine package exposes **3 faces**: (a) a Claude Code plugin (skills + hooks), (b) a standalone **MCP server** (Tier-2 portability), (c) a thin **CLI**. Shared core lib underneath.
@@ -27,21 +27,24 @@ The contracts are stable; the engines behind them sharpen in v0.2.
 
 ## Repo scaffold (root)
 ```
-package.json            # private root, pnpm workspace scripts
-pnpm-workspace.yaml     # packages/*
-turbo.json              # build/check/test/lint pipeline (copy Voraxx shape)
-biome.json              # single-quote, semicolons, 2-space, 120col (match Voraxx)
-tsconfig.base.json      # shared compiler opts; packages override rootDir/outDir
-.claude-plugin/marketplace.json   # lists all module plugins
+package.json            # single published package (bins, exports, scripts)
+tsconfig.base.json      # shared compiler opts
+tsconfig.json           # build project: src/ -> dist/
+tsconfig.test.json      # test project: src/ + test/ -> dist-test/
+biome.json              # single-quote, semicolons, 2-space, 120col
+src/<module>/           # core, guard, compress, memory, orchestrate
+hooks/                  # SessionStart, PreToolUse, PostToolUse, statusline
+skills/                 # SKILL.md set (templated, multi-host)
+.claude-plugin/         # marketplace.json + plugin.json (single plugin, 4 MCP servers)
 .github/workflows/ci.yml          # biome + tsc + node:test + validate + skillspector self-scan
-LICENSE                 # MIT (Q1 — default MIT; Apache-2.0 if patent-grant wanted)
+LICENSE                 # MIT
 README.md
 ```
 Decision: `git init` standalone repo at `Harness/`; append `Harness/` to `/Users/Bharat/Voraxx/.gitignore` so the parent Voraxx repo never tracks it.
 
 ## Package specs (v0.1)
 
-### 1. `packages/core` — substrate (REQUIRED, no deps)
+### 1. `src/core` — substrate (REQUIRED, no deps)
 - Plugin loader + `marketplace.json`/`plugin.json` schema + `validate` (pm-skills `validate_plugins.py` idea, in TS).
 - Skill templating (`gen-skill-docs` — gstack idea): `SKILL.md.tmpl` → per-host `SKILL.md`; `references/` progressive disclosure (K-Dense).
 - Multi-host generation targets: claude/codex/gemini/cursor.
@@ -50,7 +53,7 @@ Decision: `git init` standalone repo at `Harness/`; append `Harness/` to `/Users
 - API: CLI `ideal-harness validate|gen-hosts`; lib exports for other packages.
 - Tests: schema validation, template rendering, host-gen golden files.
 
-### 2. `packages/guard` — enforcement floor (deps: core)
+### 2. `src/guard` — enforcement floor (deps: core)
 The crown jewel. Everything deterministic, below the LLM.
 - **Policy engine** (omnigent CEL idea): allow/ask/deny rules, deny-wins, fail-closed on unmatched. Config in source control.
 - **Permission defaults** (Anthropic): read-only default; `denyRead` `~/.aws`,`~/.ssh`; self-policy write-protection; content-scoped ask (`git push *`); curl/wget not auto-approved.
@@ -64,7 +67,7 @@ The crown jewel. Everything deterministic, below the LLM.
 - Faces: hooks (PreToolUse/PostToolUse/SessionStart) + MCP server (`policy_check`,`vet_skill`,`verify_symbol`,`broker_secret`) + CLI.
 - Tests (heaviest): policy fail-closed matrix, deny-wins, SSRF/egress bypasses (DNS-rebind, redirect, IPv6/decimal), homoglyph detection, redaction, drift-guard hard-block.
 
-### 3. `packages/compress` — context & token compression (deps: core, guard)
+### 3. `src/compress` — context & token compression (deps: core, guard)
 - **Input-side** (headroom): deterministic `tool_result` compression — content-detector routing → JSON row-sampling (preserve errors/outliers), log-RLE, diff compaction. **CCR**: drop→cache(SQLite, BLAKE3 key)→`<<ccr:HASH>>` marker→`ccr_retrieve` MCP tool.
 - **Frozen-floor**: parse `cache_control`, never recompress cached prefix (the subtle correctness point).
 - **Output-side**: caveman terse-mode skill (toggle).
@@ -73,7 +76,7 @@ The crown jewel. Everything deterministic, below the LLM.
 - Faces: MCP server (`compress_tool_result`,`ccr_retrieve`) + optional proxy mode (point `ANTHROPIC_BASE_URL`) + CLI.
 - Tests: per-detector compression + token-gate (reject non-shrinking), CCR round-trip lossless, frozen-floor cache-safety.
 
-### 4. `packages/memory` — structural + episodic (deps: core, guard)
+### 4. `src/memory` — structural + episodic (deps: core, guard)
 - **Structural** (graphify): `web-tree-sitter` code-graph (start 6 langs: ts/js/py/go/rust/java), confidence labels, MinHash/LSH→Jaro-Winkler dedupe, token-budgeted subgraph retrieval.
 - **Episodic** (claude-mem contract): lifecycle hooks → `<observation>` XML (secondary-LLM compress) → SQLite-FTS5; retrieval = **BM25 (native FTS5 rank) + int8-vector hybrid via RRF** (not recency).
 - **curator** (hermes): deterministic-first prune + reconcile LLM consolidation claims vs tool-call evidence.
@@ -81,7 +84,7 @@ The crown jewel. Everything deterministic, below the LLM.
 - Faces: MCP server (`query_graph`,`get_node`,`memory_search`,`memory_write`) + SessionStart inject (relevance-ranked, not recency) + CLI.
 - Tests: graph extraction goldens, dedupe correctness, RRF ranking beats recency baseline, observation parse contract.
 
-### 5. `packages/orchestrate` — control flow (deps: core, guard, memory)
+### 5. `src/orchestrate` — control flow (deps: core, guard, memory)
 - **subagent-driven-development** (Superpowers): controller + fresh-context-per-task + spec/quality review-gate + fix loop + **file-based artifact handoff** + **durable git-path ledger**.
 - **autoplan** (gstack): dual-model consensus gauntlet + 6-principle auto-decision (Mechanical/Taste/User-Challenge).
 - **brainstorming HARD-GATE** (Superpowers): no code until approved.

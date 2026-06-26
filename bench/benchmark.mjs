@@ -15,7 +15,7 @@
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { extname, join } from 'node:path';
-import { compressToolResult, estimateTokens } from '../packages/compress/dist/index.js';
+import { compressToolResult, estimateTokens } from '../dist/compress/index.js';
 import {
   DEFAULT_RULES,
   evaluate,
@@ -23,8 +23,8 @@ import {
   redactSecrets,
   scanSkill,
   verifyPlan,
-} from '../packages/guard/dist/index.js';
-import { CodeGraph, extractSymbols } from '../packages/memory/dist/index.js';
+} from '../dist/guard/index.js';
+import { CodeGraph, extractSymbols } from '../dist/memory/index.js';
 
 const [indexDir, scanRoot, grepLog] = process.argv.slice(2);
 if (!indexDir || !scanRoot) {

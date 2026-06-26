@@ -21,11 +21,11 @@ jobs:
       - run: pnpm check
       - run: pnpm test
       # Dogfood the substrate: validate every manifest + skill frontmatter.
-      - run: node packages/core/dist/cli/index.js validate .
+      - run: node dist/core/cli/index.js validate .
       # Skill threat self-scan: every SKILL.md must pass the guard vetting gate.
       - run: |
           set -e
-          for f in $(find packages -name SKILL.md); do
+          for f in $(find skills -name SKILL.md); do
             echo "vetting $f"
-            node packages/guard/dist/cli/index.js vet "$f" > /dev/null
+            node dist/guard/cli/index.js vet "$f" > /dev/null
           done

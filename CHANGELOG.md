@@ -2,8 +2,9 @@
 
 ## v0.1.0 — the spine (unreleased)
 
-First release: the five core layers of the harness, each an independently installable
-plugin with a Claude Code face (skills/hooks), a standalone MCP server, and a CLI.
+First release: the five core modules of the harness, shipped as a single npm package
+(`ideal-harness`) with a Claude Code plugin face (skills/hooks), four standalone MCP
+servers, and five CLIs.
 
 ### Modules
 

@@ -1,0 +1,12 @@
+{
+  "name": "ideal-harness",
+  "version": "0.1.0",
+  "description": "The Ideal Harness: enforcement floor, context compression, memory, and orchestration around a stateless model.",
+  "author": { "name": "Bharat" },
+  "mcpServers": {
+    "ideal-harness-guard":       { "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/guard/cli/index.js", "mcp"] },
+    "ideal-harness-compress":    { "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/compress/cli/index.js", "mcp"] },
+    "ideal-harness-memory":      { "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/memory/cli/index.js", "mcp"] },
+    "ideal-harness-orchestrate": { "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/orchestrate/cli/index.js", "mcp"] }
+  }
+}

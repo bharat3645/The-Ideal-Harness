@@ -19,23 +19,23 @@ coherent — they are not negotiable, because they are the whole point.
 
 ```bash
 pnpm install
-pnpm build      # turbo, dependency-ordered
+pnpm build      # one tsc project: src/ -> dist/
 pnpm check      # type-check (strict, exactOptionalPropertyTypes)
 pnpm test       # node:test, zero test-framework deps
 pnpm biome:fix  # lint + format (single quotes, 2-space, 120col)
 ```
 
 A change is not done until `pnpm build && pnpm check && pnpm test && pnpm biome` are all
-green, `node packages/core/dist/cli/index.js validate .` passes, and every `SKILL.md` you
-touched passes `node packages/guard/dist/cli/index.js vet <file>`.
+green, `node dist/core/cli/index.js validate .` passes, and every `SKILL.md` you
+touched passes `node dist/guard/cli/index.js vet <file>`.
 
 ## Adding a module
 
-Each package follows the same shape: a `package.json` (depends on `@ideal-harness/core`),
-`tsconfig.json` + `tsconfig.test.json`, `.claude-plugin/plugin.json`, `src/` with a clean
-public `index.ts`, and three faces where it makes sense — a Claude Code plugin (skills /
-hooks), a standalone MCP server (`src/runtime/mcp.ts`, built on `createMcpServer` from
-core), and a CLI (`src/cli/index.ts`). Register the plugin in `.claude-plugin/marketplace.json`.
+Each module lives in `src/<module>/` with a clean public `index.ts`, and exposes up to three
+faces where it makes sense — Claude Code skills/hooks, a standalone MCP server
+(`src/<module>/runtime/mcp.ts`, built on `createMcpServer` from core), and a CLI
+(`src/<module>/cli/index.ts`). Add the CLI as a `bin` and a subpath `export` in the root
+`package.json`, and register any MCP server in `.claude-plugin/plugin.json`.
 
 ## Code style
 

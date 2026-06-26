@@ -1,8 +1,0 @@
-{
-  "name": "ideal-harness-core",
-  "version": "0.1.0",
-  "description": "The Ideal Harness substrate: plugin loader, schema validation, skill templating + multi-host generation, bootstrap skill.",
-  "author": {
-    "name": "Bharat"
-  }
-}

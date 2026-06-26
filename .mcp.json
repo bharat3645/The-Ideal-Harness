@@ -2,19 +2,19 @@
   "mcpServers": {
     "ideal-harness-guard": {
       "command": "node",
-      "args": ["${CLAUDE_PROJECT_DIR}/packages/guard/dist/cli/index.js", "mcp"]
+      "args": ["dist/guard/cli/index.js", "mcp"]
     },
     "ideal-harness-compress": {
       "command": "node",
-      "args": ["${CLAUDE_PROJECT_DIR}/packages/compress/dist/cli/index.js", "mcp"]
+      "args": ["dist/compress/cli/index.js", "mcp"]
     },
     "ideal-harness-memory": {
       "command": "node",
-      "args": ["${CLAUDE_PROJECT_DIR}/packages/memory/dist/cli/index.js", "mcp"]
+      "args": ["dist/memory/cli/index.js", "mcp"]
     },
     "ideal-harness-orchestrate": {
       "command": "node",
-      "args": ["${CLAUDE_PROJECT_DIR}/packages/orchestrate/dist/cli/index.js", "mcp"]
+      "args": ["dist/orchestrate/cli/index.js", "mcp"]
     }
   }
 }

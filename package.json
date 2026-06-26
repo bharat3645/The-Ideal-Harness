@@ -1,30 +1,61 @@
 {
   "name": "ideal-harness",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
-  "description": "A Claude-Code-native agent harness with an MCP-portable enforcement and tooling core.",
+  "description": "A Claude-Code-native agent harness with an MCP-portable enforcement and tooling core: the substrate (loader, validation, skill templating + multi-host generation), the deny-wins enforcement floor, deterministic context compression, structural + episodic memory, and orchestration — all in one package.",
   "license": "MIT",
   "packageManager": "pnpm@10.33.0",
   "engines": {
     "node": ">=20"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bharat3645/The-Ideal-Harness.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./dist/core/index.js",
+  "types": "./dist/core/index.d.ts",
+  "exports": {
+    ".": "./dist/core/index.js",
+    "./core": "./dist/core/index.js",
+    "./guard": "./dist/guard/index.js",
+    "./compress": "./dist/compress/index.js",
+    "./memory": "./dist/memory/index.js",
+    "./orchestrate": "./dist/orchestrate/index.js",
+    "./schema": "./dist/core/schema/index.js",
+    "./skills": "./dist/core/skills/index.js"
+  },
+  "bin": {
+    "ideal-harness": "./dist/core/cli/index.js",
+    "ideal-harness-guard": "./dist/guard/cli/index.js",
+    "ideal-harness-compress": "./dist/compress/cli/index.js",
+    "ideal-harness-memory": "./dist/memory/cli/index.js",
+    "ideal-harness-orchestrate": "./dist/orchestrate/cli/index.js"
+  },
+  "files": [
+    "dist",
+    "skills",
+    "hooks",
+    ".claude-plugin"
+  ],
   "scripts": {
-    "build": "turbo run build",
-    "check": "turbo run check",
-    "test": "turbo run test",
-    "clean": "turbo run clean",
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.test.json && node --test \"dist-test/test/**/*.test.js\"",
+    "clean": "rm -rf dist dist-test",
     "biome": "biome check .",
     "biome:fix": "biome check --write .",
-    "validate": "node packages/core/dist/cli/index.js validate",
+    "validate": "node dist/core/cli/index.js validate",
     "setup": "node scripts/setup.mjs",
-    "release": "pnpm -r build && pnpm -r publish --access public",
-    "release:dry": "pnpm -r build && pnpm -r publish --dry-run --no-git-checks"
+    "prepublishOnly": "tsc -p tsconfig.json",
+    "release": "corepack pnpm publish --access public",
+    "release:dry": "corepack pnpm publish --dry-run --no-git-checks"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.0.0",
     "@types/node": "^25.0.3",
-    "turbo": "^2.5.0",
     "typescript": "^5.9.3"
   }
 }

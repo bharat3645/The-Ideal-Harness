@@ -33,32 +33,50 @@ context models), so the meter tracks whatever model the agent is on; `IDEAL_HARN
 overrides it, and ~1M is only a last-resort fallback when the host reports no window. Wired live via
 `.claude/settings.local.json` (not floor-protected); `scripts/setup.mjs` installs it for other projects.
 
-## The active floor (from `packages/guard/src/policy/defaults.ts`)
+## The active floor (from `src/guard/policy/defaults.ts`)
 
 `.claude/settings.json` wires guard's `PreToolUse`/`PostToolUse` and core's `SessionStart` hooks.
 Defaults are deny-wins, fail-closed (unmatched → ask):
 
 - **Deny:** reading credential files (`.aws`/`.ssh`/`.gnupg`/`.env`/`id_rsa`/`credentials`);
-  Edit/Write to `settings.json`, `.claude-plugin/`, `ideal-harness.policy`, or `packages/guard/src/policy/`
+  Edit/Write to `settings.json`, `.claude-plugin/`, `ideal-harness.policy`, or `src/guard/policy/`
   (self-policy protection); destructive shell (`rm -rf ~//`, `mkfs`, `dd …of=/dev/`, fork bomb).
   Matching is path-separator- and case-insensitive, so Windows backslash paths can't slip past.
 - **Ask:** all `Bash`, `Edit`, `Write`, `WebFetch`; `curl`/`wget`/`nc`; `git push`.
 - **Allow:** `Read`, `Glob`, `Grep`, `LS`.
 
-To change the floor, edit `packages/guard/src/policy/defaults.ts` and rebuild — it cannot be edited
+To change the floor, edit `src/guard/policy/defaults.ts` and rebuild — it cannot be edited
 through the harness (the floor refuses to edit its own floor; that's by design).
+
+## Dangerously skip permissions (operator escape hatch)
+
+The floor sits below the model and the model cannot disable it by reasoning. The **human
+operator** can, mirroring Claude Code's own `--dangerously-skip-permissions` — with **no edit
+to `settings.json` or any file**. The PreToolUse hook waives the permission gate (deny/ask →
+allow-all) when either signal is present (`src/guard/bypass.ts`):
+
+- **`claude --dangerously-skip-permissions`** → Claude Code reports `permission_mode:
+  "bypassPermissions"` in the hook event; the harness honors the same intent instead of re-blocking.
+- **`IDEAL_HARNESS_DANGEROUSLY_SKIP_PERMISSIONS=1`** (also `true`/`yes`/`on`) → a file-free env
+  switch, e.g. `IDEAL_HARNESS_DANGEROUSLY_SKIP_PERMISSIONS=1 claude`.
+
+Scope is narrow and loud: it relaxes only the **permission decision**. PostToolUse output
+scrubbing (secret redaction, untrusted-content fencing) stays on — it is hygiene, not a permission.
+Every bypassed call prints `⚠ permission floor BYPASSED …` to stderr. Unset the var / drop the flag
+to restore the floor. As the name says: dangerous — credential reads, destructive shell, and
+self-policy writes all become allowed while it is active.
 
 ## Project conventions
 
-- **Stack:** TypeScript (ESM), Node ≥ 20, pnpm workspaces + Turborepo + Biome. MCP via `@modelcontextprotocol/sdk`. Tests on `node:test` (zero test-framework deps).
+- **Stack:** TypeScript (ESM), Node ≥ 20, a single package built with `tsc`, Biome. MCP via `@modelcontextprotocol/sdk`. Tests on `node:test` (zero test-framework deps).
 - **Package manager:** pnpm 10.33.0, pinned via `packageManager`. There is no `pnpm` shim on PATH in this environment — invoke it as **`corepack pnpm …`**.
-- **Build:** `corepack pnpm -r run build` (topological). Note: `pnpm build` → `turbo run build` fails here because turbo can't find a `pnpm` binary on PATH; the recursive runner works.
-- **Test:** `corepack pnpm -r run test` (130 tests across the 5 packages).
+- **Build:** `corepack pnpm build` (one `tsc -p tsconfig.json` project: `src/` → `dist/`; the compiler resolves module order).
+- **Test:** `corepack pnpm test` (135 tests across the 5 modules; compiles `tsconfig.test.json` → `dist-test/`, then `node --test`).
 - **Validate:** `corepack pnpm validate` (the substrate validates its own repo).
 - **Lint/format:** `corepack pnpm biome` / `corepack pnpm biome:fix`.
-- **Build order:** `core` → `guard` → (`compress`, `memory`) → `orchestrate`.
-- **Important paths:** `packages/{core,guard,compress,memory,orchestrate}`; policy in `packages/guard/src/policy/defaults.ts`; dogfood wiring in `.claude/settings.json`.
-- **Never touch:** `.claude/settings.json`, `.claude-plugin/*`, `packages/guard/src/policy/*` are policy-protected — the floor denies edits to them.
+- **Layout:** one package at the repo root — `src/{core,guard,compress,memory,orchestrate}` compile to `dist/<module>/`; five bins + four MCP servers ship from the single package.
+- **Important paths:** `src/{core,guard,compress,memory,orchestrate}`; policy in `src/guard/policy/defaults.ts`; hooks in `hooks/`; dogfood wiring in `.claude/settings.json`.
+- **Never touch:** `.claude/settings.json`, `.claude-plugin/*`, `src/guard/policy/*` are policy-protected — the floor denies edits to them.
 
 ## Honesty rule
 
