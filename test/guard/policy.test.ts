@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DEFAULT_RULES } from '../../src/guard/policy/defaults.js';
-import { evaluate } from '../../src/guard/policy/engine.js';
+import { evaluate, evaluateTiered } from '../../src/guard/policy/engine.js';
 import type { PolicyRule } from '../../src/guard/policy/types.js';
 
 test('deny always wins over allow and ask', () => {
@@ -49,6 +49,38 @@ test('git push and shell network fetches require approval', () => {
 
 test('plain shell commands are ask, not allow', () => {
   assert.equal(evaluate({ tool: 'Bash', input: { command: 'ls -la' } }, DEFAULT_RULES).action, 'ask');
+});
+
+test('read-only git commands are allowed by default', () => {
+  for (const cmd of [
+    'git status',
+    'git status -sb',
+    'git log --oneline -20',
+    'git diff HEAD~1',
+    'git diff --stat',
+    'git log',
+  ]) {
+    assert.equal(evaluate({ tool: 'Bash', input: { command: cmd } }, DEFAULT_RULES).action, 'allow', cmd);
+  }
+});
+
+test('git-readonly allow rejects chaining, redirection, and substitution', () => {
+  const cases: Array<[string, string]> = [
+    ['git status; rm -rf ~/', 'deny'], // chain hits destructive deny
+    ['git status && curl https://x.com', 'ask'],
+    ['git log | sh', 'ask'],
+    ['git diff > /tmp/out', 'ask'],
+    ['git log $(whoami)', 'ask'],
+    ['git log `whoami`', 'ask'],
+    ['git log --output=/tmp/x', 'ask'],
+    ['git log -p -- .env', 'ask'],
+    ['git diff -- id_rsa', 'ask'],
+    ['git push origin main', 'ask'], // push is not in the read-only set
+    ['git branch -D main', 'ask'], // branch mutates; not in the set
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(evaluate({ tool: 'Bash', input: { command: cmd } }, DEFAULT_RULES).action, expected, cmd);
+  }
 });
 
 test('Windows backslash credential paths are denied (no separator bypass)', () => {
@@ -104,6 +136,34 @@ test('anchored credential patterns still deny the real files', () => {
       `${file} should still be denied`,
     );
   }
+});
+
+test('evaluateTiered: first tier with a match decides; deny-wins holds inside a tier', () => {
+  const userTier: PolicyRule[] = [
+    { id: 'u-allow', action: 'allow', tool: 'Bash', match: '^git status' },
+    { id: 'u-deny', action: 'deny', tool: 'Bash', match: 'status --secret' },
+  ];
+  // User tier matches → decides, without consulting the floor.
+  assert.equal(
+    evaluateTiered({ tool: 'Bash', input: { command: 'git status' } }, [userTier, DEFAULT_RULES]).action,
+    'allow',
+  );
+  // Deny still wins over allow inside the same tier.
+  assert.equal(
+    evaluateTiered({ tool: 'Bash', input: { command: 'git status --secret' } }, [userTier, DEFAULT_RULES]).action,
+    'deny',
+  );
+  // User tier silent → floor decides.
+  assert.equal(
+    evaluateTiered({ tool: 'Bash', input: { command: 'npm test' } }, [userTier, DEFAULT_RULES]).action,
+    'ask',
+  );
+});
+
+test('evaluateTiered: nothing matched in any tier fails closed to ask', () => {
+  const decision = evaluateTiered({ tool: 'MysteryTool', input: {} }, [[], []]);
+  assert.equal(decision.action, 'ask');
+  assert.equal(decision.ruleId, 'default');
 });
 
 test('editing the policy source itself is denied, on both path styles', () => {

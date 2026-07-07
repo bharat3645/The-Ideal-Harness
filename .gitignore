@@ -12,3 +12,6 @@ coverage/
 
 # Per-project memory store (project-local by design; never committed).
 .ideal-harness/
+
+# User-local Claude Code settings (statusline wiring; scripts/setup.mjs regenerates it).
+.claude/settings.local.json

@@ -15,7 +15,7 @@ enforcement floor and bootstrap skill via `.claude/settings.json`. The five modu
 |---|---|---|
 | Token pressure / large tool output | `compress` | Automatic `tool_result` compression; call `ccr_retrieve` when you see a `<<ccr:HASH>>` marker. |
 | "What calls X", "where is Y", past decisions | `memory` | `query_graph` (code structure) / `memory_search` (episodic) instead of re-reading whole files. |
-| Multi-step build / plan / review | `orchestrate` | Brainstorm (no code until approved) → plan → fresh-context implementer per task → review gate → fix loop. |
+| Multi-step build / plan / review | `orchestrate` | Brainstorm (no code until approved) → plan → `scout` locates → fresh-context `implementer` per task → `reviewer` gate → fix loop. The three agents ship in `agents/` (symlinked into `.claude/agents/` for dogfood discovery). |
 | Any tool call | `guard` | Deterministic floor below the model. If a call is denied, it is denied for a reason — do not route around it. |
 | Substrate (loader, validation, templating) | `core` | `pnpm validate`; skill templating + multi-host generation. |
 
@@ -35,47 +35,79 @@ overrides it, and ~1M is only a last-resort fallback when the host reports no wi
 
 ## The active floor (from `src/guard/policy/defaults.ts`)
 
-`.claude/settings.json` wires guard's `PreToolUse`/`PostToolUse` and core's `SessionStart` hooks.
-Defaults are deny-wins, fail-closed (unmatched → ask):
+`.claude/settings.json` wires guard's `PreToolUse`/`PostToolUse` and core's `SessionStart` hooks;
+`.claude/settings.local.json` wires the compress statusline. Rule precedence is
+**deny > allow > ask > default-ask** (Claude Code's own model: deny absolute, an explicit allow
+beats a catch-all ask, unmatched fails closed to ask):
 
 - **Deny:** reading credential files (`.aws`/`.ssh`/`.gnupg`/`.env`/`id_rsa`/`credentials`);
   Edit/Write to `settings.json`, `.claude-plugin/`, `ideal-harness.policy`, or `src/guard/policy/`
   (self-policy protection); destructive shell (`rm -rf ~//`, `mkfs`, `dd …of=/dev/`, fork bomb).
   Matching is path-separator- and case-insensitive, so Windows backslash paths can't slip past.
 - **Ask:** all `Bash`, `Edit`, `Write`, `WebFetch`; `curl`/`wget`/`nc`; `git push`.
-- **Allow:** `Read`, `Glob`, `Grep`, `LS`.
+- **Allow:** `Read`, `Glob`, `Grep`, `LS`; read-only git (`git status|log|diff`, anchored — no
+  chaining/redirection metacharacters, no credential-path args, no `--output`).
 
-To change the floor, edit `src/guard/policy/defaults.ts` and rebuild — it cannot be edited
-through the harness (the floor refuses to edit its own floor; that's by design).
+**The floor is soft by default** (see modes below): denies downgrade to asks, so out of the box
+nothing is hard-blocked — the human approves. `enforce` restores hard denies. Every decision is
+appended to the **journal** (`.ideal-harness/guard-journal.jsonl` — secret-redacted, fail-open,
+`IDEAL_HARNESS_JOURNAL=off` to disable), and `node dist/guard/cli/index.js learn` turns repeated
+approvals into **proposed** allowlist entries — printed for the human to paste into
+`ideal-harness.policy.json`, never applied by the harness itself.
 
-## Dangerously skip permissions (operator escape hatch)
+The default floor cannot be edited *through* the harness (the floor refuses to edit its own
+floor; that's by design). The **human operator** changes it with the knobs below.
 
-The floor sits below the model and the model cannot disable it by reasoning. The **human
-operator** can, mirroring Claude Code's own `--dangerously-skip-permissions` — with **no edit
-to `settings.json` or any file**. The PreToolUse hook waives the permission gate (deny/ask →
-allow-all) when either signal is present (`src/guard/bypass.ts`):
+## Operator control of the floor (`src/guard/bypass.ts`, `src/guard/policy/load.ts`)
 
-- **`claude --dangerously-skip-permissions`** → Claude Code reports `permission_mode:
-  "bypassPermissions"` in the hook event; the harness honors the same intent instead of re-blocking.
-- **`IDEAL_HARNESS_DANGEROUSLY_SKIP_PERMISSIONS=1`** (also `true`/`yes`/`on`) → a file-free env
-  switch, e.g. `IDEAL_HARNESS_DANGEROUSLY_SKIP_PERMISSIONS=1 claude`.
+The floor sits below the model and the model cannot disable it by reasoning. Every override
+belongs to the human, and every softening is loud on stderr — nothing relaxes silently.
 
-Scope is narrow and loud: it relaxes only the **permission decision**. PostToolUse output
-scrubbing (secret redaction, untrusted-content fencing) stays on — it is hygiene, not a permission.
-Every bypassed call prints `⚠ permission floor BYPASSED …` to stderr. Unset the var / drop the flag
-to restore the floor. As the name says: dangerous — credential reads, destructive shell, and
-self-policy writes all become allowed while it is active.
+**Floor modes** — resolved per call by `floorMode()`; selected via env, no file edits:
+
+| Mode | Signal | Effect |
+|---|---|---|
+| `soft` (**default**) | — (or `IDEAL_HARNESS_FLOOR_MODE=soft`) | nothing hard-blocked: every deny → ask; the human decides. Mirrors Claude Code's own out-of-the-box posture. |
+| `enforce` | `IDEAL_HARNESS_FLOOR_MODE=enforce` | deny is deny, ask is ask — the strict opt-in for untrusted repos / unattended runs |
+| `bypass` | `claude --dangerously-skip-permissions`, or `IDEAL_HARNESS_DANGEROUSLY_SKIP_PERMISSIONS=1` (`true`/`yes`/`on`), or `IDEAL_HARNESS_FLOOR_MODE=bypass` | allow-all (permission decision only) |
+
+An explicitly set but unrecognized mode value fails strict (to `enforce`), never soft — a broken
+operator signal must not soften the floor. Hard denies (in `enforce`) name their rule id and the
+operator knobs in the decision reason: the floor teaches, it doesn't stonewall.
+
+Bypass relaxes only the **permission decision**. PostToolUse output scrubbing (secret
+redaction, untrusted fencing) stays on — hygiene, not a permission. Bypass is dangerous by
+name: credential reads, destructive shell, and self-policy writes all become allowed.
+
+**User policy file** — `ideal-harness.policy.json` (project root and/or `~/.config/`) lets the
+operator rewrite the instructions without touching source:
+
+```json
+{
+  "disable": ["ask-bash"],
+  "rules": [
+    { "id": "u-allow-git-ro", "action": "allow", "tool": "Bash", "match": "^git (status|log|diff)\\b" }
+  ]
+}
+```
+
+User rules form a **higher tier** (`evaluateTiered`): a user allow beats a default ask; unmatched
+calls fall through to the default floor; nothing matched anywhere still fails closed to ask.
+`disable` drops default rules by id — including deny rules, with a loud `floor softened` warning.
+The policy file itself is covered by the self-policy deny pattern, so the model cannot rewrite it
+through the harness — only the human can. A broken file is ignored with a warning (never widens
+the floor); `IDEAL_HARNESS_USER_POLICY=off` is the kill-switch.
 
 ## Project conventions
 
 - **Stack:** TypeScript (ESM), Node ≥ 20, a single package built with `tsc`, Biome. MCP via `@modelcontextprotocol/sdk`. Tests on `node:test` (zero test-framework deps).
 - **Package manager:** pnpm 10.33.0, pinned via `packageManager`. There is no `pnpm` shim on PATH in this environment — invoke it as **`corepack pnpm …`**.
 - **Build:** `corepack pnpm build` (one `tsc -p tsconfig.json` project: `src/` → `dist/`; the compiler resolves module order).
-- **Test:** `corepack pnpm test` (135 tests across the 5 modules; compiles `tsconfig.test.json` → `dist-test/`, then `node --test`).
+- **Test:** `corepack pnpm test` (full suite across the 5 modules; compiles `tsconfig.test.json` → `dist-test/`, then `node --test`).
 - **Validate:** `corepack pnpm validate` (the substrate validates its own repo).
 - **Lint/format:** `corepack pnpm biome` / `corepack pnpm biome:fix`.
 - **Layout:** one package at the repo root — `src/{core,guard,compress,memory,orchestrate}` compile to `dist/<module>/`; five bins + four MCP servers ship from the single package.
-- **Important paths:** `src/{core,guard,compress,memory,orchestrate}`; policy in `src/guard/policy/defaults.ts`; hooks in `hooks/`; dogfood wiring in `.claude/settings.json`.
+- **Important paths:** `src/{core,guard,compress,memory,orchestrate}`; policy in `src/guard/policy/defaults.ts`; hooks in `hooks/`; agents in `agents/`; dogfood wiring in `.claude/settings.json` (+ statusline in `.claude/settings.local.json`).
 - **Never touch:** `.claude/settings.json`, `.claude-plugin/*`, `src/guard/policy/*` are policy-protected — the floor denies edits to them.
 
 ## Honesty rule

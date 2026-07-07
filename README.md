@@ -78,13 +78,14 @@ Two `guard` hooks fire deterministically around every tool call — no prompt, n
 
 **PreToolUse — before the call executes:**
 
-1. **Policy check.** Deny-wins, fail-closed. Credential reads, `rm -rf`, and writes to the policy file are denied; ambiguous actions become an ask, not a silent allow.
+1. **Policy check.** Deny > allow > ask, fail-closed (Claude Code's own precedence). Credential reads, `rm -rf`, and writes to the policy file are denied; read-only git is allowed; ambiguous actions become an ask, not a silent allow. The floor is **soft by default** — denies downgrade to asks so the human decides, mirroring Claude Code's out-of-the-box posture — and **operator-tunable, never model-tunable**: `IDEAL_HARNESS_FLOOR_MODE=enforce` restores hard denies, `ideal-harness.policy.json` (project root or `~/.config/`) adds a higher rule tier or disables defaults by id, and `claude --dangerously-skip-permissions` (or `IDEAL_HARNESS_DANGEROUSLY_SKIP_PERMISSIONS=1`) waives the permission gate entirely. Every softening is announced on stderr; a broken user policy falls back to the pristine defaults; an unrecognized mode value fails strict.
 2. **Outbound-secret block.** Egress tools (`Bash`, `Write`, `Edit`, `WebFetch`) are scanned; a call that would carry a secret out is blocked before it runs.
+3. **Decision journal + learning loop.** Every decision is appended (secret-redacted, fail-open) to `.ideal-harness/guard-journal.jsonl`; `ideal-harness-guard learn` turns repeated approvals into *proposed* allowlist entries the human may paste into the policy file — the harness never applies them itself.
 
 **PostToolUse — on the result, before the model reads it:**
 
-3. **Secret redaction.** The result is rewritten with secrets masked as `[REDACTED:type]` (via the `updatedToolOutput` contract) before the model sees it — the same detector that flagged 40 secret-shaped strings across 18 files on a 2,577-file repo.
-4. **Injection fencing.** Web/MCP output, or any result tripping an injection cue, is wrapped in a breakout-safe `<untrusted_content>` fence so the model treats it as data, not instructions.
+4. **Secret redaction.** The result is rewritten with secrets masked as `[REDACTED:type]` (via the `updatedToolOutput` contract) before the model sees it — the same detector that flagged 40 secret-shaped strings across 18 files on a 2,577-file repo.
+5. **Injection fencing.** Web/MCP output, or any result tripping an injection cue, is wrapped in a breakout-safe `<untrusted_content>` fence so the model treats it as data, not instructions.
 
 **At SessionStart**, the `using-ideal-harness` bootstrap skill is injected so the model knows the floor is active and how to route.
 
@@ -208,6 +209,8 @@ Honesty is the brand, so here is exactly where v0.1 stands.
   - drift-guard uses a grep tier today; LSP / SCIP is v0.2.
 
 Nothing here is overclaimed. The contracts are fixed; the engines behind them get sharper.
+
+Where this is going: **[VISION.md](VISION.md)** — the full possibility space (personas, per-module upgrade paths, the learning flywheel, anti-goals, and the testable definition of "ideal"). **[DESIGN.md](DESIGN.md)** — the 9-layer architecture and source adjudication it is built from.
 
 ## License
 

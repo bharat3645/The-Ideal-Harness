@@ -7,7 +7,17 @@
  * with an authority ladder, and an OS sandbox command builder.
  */
 
-export { BYPASS_ENV_VAR, BYPASS_PERMISSION_MODE, type BypassSignals, skipPermissionsActive } from './bypass.js';
+export {
+  applyFloorMode,
+  BYPASS_ENV_VAR,
+  BYPASS_PERMISSION_MODE,
+  type BypassSignals,
+  DEFAULT_FLOOR_MODE,
+  FLOOR_MODE_ENV_VAR,
+  type FloorMode,
+  floorMode,
+  skipPermissionsActive,
+} from './bypass.js';
 export {
   ABSENCE_PROOF_FLOOR,
   AUTHORITY_ORDER,
@@ -18,6 +28,25 @@ export {
   verifySymbol,
 } from './drift.js';
 export { looksLikeInjection, type WrapOptions, wrapUntrusted } from './injection.js';
+export {
+  type AppendOptions,
+  appendJournalEntry,
+  type BuildEntryInput,
+  buildJournalEntry,
+  type GuardJournalEntry,
+  JOURNAL_ENV_VAR,
+  JOURNAL_SUBJECT_MAX,
+  journalPath,
+  parseJournal,
+} from './journal.js';
+export {
+  type AllowProposal,
+  commandShape,
+  DEFAULT_MIN_COUNT,
+  formatProposals,
+  learnFromJournal,
+  proposeAllowRules,
+} from './learn.js';
 export * from './policy/index.js';
 export { type RedactionPattern, type RedactionResult, redactSecrets, SECRET_PATTERNS } from './redact.js';
 export { buildSandboxCommand, type Platform, type SandboxCommand, type SandboxOptions, scrubEnv } from './sandbox.js';

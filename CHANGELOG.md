@@ -1,5 +1,62 @@
 # Changelog
 
+## Unreleased
+
+### guard — softened for good: soft floor is now the DEFAULT
+
+- **Default floor mode is `soft`**: denies downgrade to asks, so out of the box nothing is
+  hard-blocked — the human decides. This mirrors Claude Code's own default posture (no hard
+  denies unless configured). `IDEAL_HARNESS_FLOOR_MODE=enforce` restores hard denies; an
+  explicitly set but unrecognized mode value fails strict (to `enforce`), never soft.
+- **Rule precedence corrected to deny > allow > ask** (was deny > ask > allow) — Claude Code's
+  own model: an explicit allow now beats a catch-all ask, which is what lets narrow default
+  allows coexist with the broad `ask-bash`. Deny stays absolute; unmatched still fails closed.
+- **Read-only git allowed by default** (`git status|log|diff`): anchored pattern rejecting
+  chaining/redirection/substitution metacharacters, credential-path args, and `--output`.
+- **Decision journal**: every PreToolUse decision (tool, redacted subject, action, rule, mode,
+  softened flag) appends to `.ideal-harness/guard-journal.jsonl` — project-local, fail-open,
+  `IDEAL_HARNESS_JOURNAL=off` kill-switch. Hard denies now name their rule id and the operator
+  knobs in the decision reason (explain-mode).
+- **Self-learning loop v1** (`ideal-harness-guard learn`): reads the journal, finds Bash command
+  shapes with ≥3 approvals (never shapes that ever hit a deny or softened deny; never Edit/Write;
+  never egress-secret asks), and prints narrow anchored allow-rule *proposals* for the human to
+  paste into `ideal-harness.policy.json`. Proposals only — the harness never applies them.
+
+### agents — the orchestrate flow gets its cast
+
+- `agents/scout.md` (read-only locator, file:line tables), `agents/implementer.md`
+  (one task, verification-first, reports faithfully), `agents/reviewer.md` (gate that re-runs
+  the implementer's verify command instead of trusting the claim). Symlinked into
+  `.claude/agents/` for dogfood discovery; ship with the plugin for installs.
+- Skills updated to route through them (`subagent-driven-development`, `using-ideal-harness`).
+
+### wiring
+
+- `.claude/settings.local.json` added: the compress statusline was documented as wired but
+  wasn't in this checkout. All four MCP servers verified booting via initialize handshake.
+
+### guard — operator-tunable floor
+
+The floor stays deterministic and below the model; the *human operator* now has sanctioned
+knobs to soften or rewrite it, all loud on stderr and none reachable by the model:
+
+- **Floor modes** (`floorMode` / `applyFloorMode` in `src/guard/bypass.ts`): `enforce`
+  (default) / `soft` (`IDEAL_HARNESS_FLOOR_MODE=soft` — every deny downgrades to ask, the
+  human decides instead of the harness) / `bypass` (allow-all; existing
+  dangerously-skip-permissions signals, plus `IDEAL_HARNESS_FLOOR_MODE=bypass`).
+- **User policy file** (`src/guard/policy/load.ts`): `ideal-harness.policy.json` at the
+  project root and/or `~/.config/` adds an operator rule tier evaluated *above* the default
+  floor (`evaluateTiered` — first tier with a match decides; deny-wins inside a tier;
+  nothing matched still fails closed to ask), and `disable` drops default rules by id —
+  deny rules included, with a `floor softened` warning. The file is itself covered by the
+  self-policy deny pattern, so only the human can edit it through the harness. A broken
+  file is ignored with a warning and never widens the floor; `IDEAL_HARNESS_USER_POLICY=off`
+  is the kill-switch.
+- **Bootstrap skill tuned for the Claude 5 (Fable) era**: decision-making principles
+  (act on sufficient information, verify before relying, lead with the outcome, report
+  faithfully) split from harness mechanics; denials now route the operator to the right
+  knob instead of being a dead end.
+
 ## v0.1.0 — the spine (unreleased)
 
 First release: the five core modules of the harness, shipped as a single npm package

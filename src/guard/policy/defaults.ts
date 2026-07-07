@@ -61,6 +61,17 @@ export const DEFAULT_RULES: readonly PolicyRule[] = [
   { id: 'ask-write', action: 'ask', tool: 'Write', description: 'file creation requires approval by default' },
 
   // === ALLOW (read-only) ===
+  {
+    id: 'allow-git-readonly',
+    action: 'allow',
+    tool: 'Bash',
+    // Anchored to plain read-only git forms. The character class rejects
+    // chaining/redirection/substitution (; & | < > ` $ newline) anywhere in the
+    // args, and the lookahead rejects credential-path args and --output (the
+    // one flag that makes these commands write files).
+    match: '^git (status|log|diff)(?!.*(?:\\.env|id_rsa|credentials|--output))(\\s[^;&|<>`$\\n]*)?$',
+    description: 'read-only git commands are allowed (no chaining, redirection, or credential-path args)',
+  },
   { id: 'allow-read', action: 'allow', tool: 'Read', description: 'reading files is allowed' },
   { id: 'allow-glob', action: 'allow', tool: 'Glob', description: 'globbing is allowed' },
   { id: 'allow-grep', action: 'allow', tool: 'Grep', description: 'searching is allowed' },

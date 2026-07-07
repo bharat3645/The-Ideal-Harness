@@ -7,10 +7,13 @@
  *   vet <file>          scan a skill/script file; exit 1 if it fails vetting
  *   policy <json>       evaluate a `{tool,input}` request; print the decision
  *   redact              redact secrets from stdin
+ *   learn [minCount]    propose allow rules from repeated approvals in the
+ *                       decision journal — proposals only, human-ratified
  */
 
 import { readFile } from 'node:fs/promises';
 import { readStdin, runCli } from '../../core/index.js';
+import { formatProposals, learnFromJournal } from '../learn.js';
 import { DEFAULT_RULES } from '../policy/defaults.js';
 import { evaluate } from '../policy/engine.js';
 import { redactSecrets } from '../redact.js';
@@ -49,8 +52,17 @@ async function main(): Promise<number> {
       process.stderr.write(`\n[redacted ${result.count} secret(s): ${result.types.join(', ')}]\n`);
       return 0;
     }
+    case 'learn': {
+      const minCount = rest[0] !== undefined ? Number.parseInt(rest[0], 10) : undefined;
+      if (minCount !== undefined && (!Number.isFinite(minCount) || minCount < 1)) {
+        process.stderr.write('usage: ideal-harness-guard learn [minCount >= 1]\n');
+        return 1;
+      }
+      process.stdout.write(formatProposals(learnFromJournal(process.cwd(), minCount)));
+      return 0;
+    }
     default:
-      process.stdout.write('usage: ideal-harness-guard <mcp|vet|policy|redact>\n');
+      process.stdout.write('usage: ideal-harness-guard <mcp|vet|policy|redact|learn>\n');
       return command === undefined ? 1 : 0;
   }
 }
