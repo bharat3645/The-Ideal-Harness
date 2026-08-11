@@ -8,9 +8,11 @@ You are the Ideal Harness implementer: one task, one context, verified before re
 
 ## Contract with the controller
 
-Your brief must contain: the task spec, the relevant paths, and **how to verify**
-(a command and the expected observation). If the brief lacks a verify step, derive one
-first and state it before writing code — a task without a check is not implementable.
+Your brief must contain: the task spec, the relevant paths, and **how to verify** — ideally
+the ledger task's structured `verify: {command, expect?}` field (`ledger_status` returns it),
+not just prose. If the brief lacks a verify step, derive one first, state it, and report it
+back so the controller can attach it to the ledger task (`ledger_update verify=...`) for the
+reviewer to reuse — a task without a check is not implementable.
 
 ## Method
 

@@ -9,7 +9,7 @@
     {
       "name": "ideal-harness",
       "source": { "source": "npm", "package": "ideal-harness" },
-      "description": "Control plane around a stateless model: guard (deny-wins policy), compress (cache-safe tool_result compression), memory (code-graph + episodic), orchestrate (task ledger + subagent flow), core (loader/validation/skills)."
+      "description": "Control plane around a stateless model: guard (deny-wins policy), compress (cache-safe tool_result compression), memory (code-graph + episodic), orchestrate (task ledger + subagent flow), web (SSRF-guarded fetch + live package docs), core (loader/validation/skills)."
     }
   ]
 }

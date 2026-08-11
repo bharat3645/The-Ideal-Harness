@@ -16,6 +16,26 @@ export function isTaskStatus(value: unknown): value is TaskStatus {
   return typeof value === 'string' && (TASK_STATUSES as readonly string[]).includes(value);
 }
 
+/** Type guard for an untrusted verify object crossing the MCP boundary or a persisted ledger. */
+export function isTaskVerify(value: unknown): value is TaskVerify {
+  if (value === null || typeof value !== 'object') {
+    return false;
+  }
+  const v = value as { command?: unknown; expect?: unknown };
+  return typeof v.command === 'string' && (v.expect === undefined || typeof v.expect === 'string');
+}
+
+/**
+ * How to verify a task is actually done: a command to run and (optionally) an
+ * observation to expect. Turns "done" into a measurement instead of an
+ * assertion — the reviewer re-runs `command` rather than trusting the
+ * implementer's report.
+ */
+export interface TaskVerify {
+  readonly command: string;
+  readonly expect?: string;
+}
+
 export interface LedgerTask {
   readonly id: string;
   readonly title: string;
@@ -23,15 +43,22 @@ export interface LedgerTask {
   /** Path/handle to the artifact this task produced (file-handoff discipline). */
   readonly artifact?: string;
   readonly notes?: string;
+  /** How to verify this task is done. Set at creation when possible (verification-first). */
+  readonly verify?: TaskVerify;
 }
 
 export class TaskLedger {
   private readonly tasks: LedgerTask[] = [];
   private counter = 0;
 
-  add(title: string, id?: string): LedgerTask {
+  add(title: string, id?: string, verify?: TaskVerify): LedgerTask {
     this.counter += 1;
-    const task: LedgerTask = { id: id ?? `t${this.counter}`, title, status: 'pending' };
+    const task: LedgerTask = {
+      id: id ?? `t${this.counter}`,
+      title,
+      status: 'pending',
+      ...(verify ? { verify } : {}),
+    };
     this.tasks.push(task);
     return task;
   }
@@ -84,12 +111,14 @@ export class TaskLedger {
       // A task with a missing/invalid status would be unreachable to nextPending()
       // and stick forever — default it to 'pending' so a resume can pick it up.
       const status: TaskStatus = isTaskStatus(t.status) ? t.status : 'pending';
+      const verify = isTaskVerify(t.verify) ? t.verify : undefined;
       ledger.tasks.push({
         id: t.id,
         title: t.title,
         status,
         ...(typeof t.artifact === 'string' ? { artifact: t.artifact } : {}),
         ...(typeof t.notes === 'string' ? { notes: t.notes } : {}),
+        ...(verify ? { verify } : {}),
       });
     }
     // Counter must exceed every existing `tN` id, or add() will mint a colliding id.

@@ -1,11 +1,20 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { DEFAULT_RULES } from '../../src/guard/policy/defaults.js';
 import { evaluate, evaluateTiered } from '../../src/guard/policy/engine.js';
-import { composePolicy, loadUserPolicy, parseUserPolicy, USER_POLICY_ENV_VAR } from '../../src/guard/policy/load.js';
+import {
+  composePolicy,
+  composePolicyTiers,
+  loadTeamPolicy,
+  loadUserPolicy,
+  parseUserPolicy,
+  TEAM_POLICY_ENV_VAR,
+  teamPolicyPath,
+  USER_POLICY_ENV_VAR,
+} from '../../src/guard/policy/load.js';
 
 test('parseUserPolicy accepts valid rules and disable list', () => {
   const parsed = parseUserPolicy(
@@ -115,8 +124,94 @@ test('loadUserPolicy kill-switch: IDEAL_HARNESS_USER_POLICY=off ignores files', 
   }
 });
 
-test('the user policy file itself stays covered by self-policy protection', () => {
-  for (const path of ['/repo/ideal-harness.policy.json', '/home/u/.config/ideal-harness.policy.json']) {
+test('loadTeamPolicy reads .ideal-harness/team-policy.json and returns empty when absent', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ih-team-policy-'));
+  try {
+    assert.deepEqual(loadTeamPolicy({ cwd: dir, env: {} }).rules, []);
+    mkdirSync(join(dir, '.ideal-harness'), { recursive: true });
+    writeFileSync(teamPolicyPath(dir), JSON.stringify({ rules: [{ id: 't1', action: 'allow', tool: 'Grep' }] }));
+    const policy = loadTeamPolicy({ cwd: dir, env: {} });
+    assert.equal(policy.rules.length, 1);
+    assert.equal(policy.rules[0]?.id, 't1');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('loadTeamPolicy kill-switch: IDEAL_HARNESS_TEAM_POLICY=off ignores the file', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ih-team-policy-'));
+  try {
+    mkdirSync(join(dir, '.ideal-harness'), { recursive: true });
+    writeFileSync(teamPolicyPath(dir), JSON.stringify({ rules: [{ id: 't1', action: 'allow' }] }));
+    const policy = loadTeamPolicy({ cwd: dir, env: { [TEAM_POLICY_ENV_VAR]: 'off' } });
+    assert.equal(policy.rules.length, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('loadTeamPolicy warns (not throws) on invalid JSON', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ih-team-policy-'));
+  try {
+    mkdirSync(join(dir, '.ideal-harness'), { recursive: true });
+    writeFileSync(teamPolicyPath(dir), '{ not json');
+    const policy = loadTeamPolicy({ cwd: dir, env: {} });
+    assert.equal(policy.rules.length, 0);
+    assert.match(policy.warnings[0] ?? '', /invalid JSON/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('composePolicyTiers: personal user policy outranks team policy outranks the default floor', () => {
+  const user = parseUserPolicy(
+    { rules: [{ id: 'u-allow', action: 'allow', tool: 'Bash', match: '^npm test' }] },
+    'user.json',
+  );
+  const team = parseUserPolicy(
+    { rules: [{ id: 't-ask', action: 'ask', tool: 'Bash', match: '^npm test' }] },
+    'team.json',
+  );
+  const { tiers } = composePolicyTiers([
+    { policy: user, label: 'user policy' },
+    { policy: team, label: 'team policy' },
+  ]);
+  // The personal allow wins over the team's own ask rule for the same command.
+  assert.equal(evaluateTiered({ tool: 'Bash', input: { command: 'npm test' } }, tiers).action, 'allow');
+});
+
+test('composePolicyTiers: team policy still beats the default floor when no personal rule matches', () => {
+  const user = parseUserPolicy({}, 'user.json');
+  const team = parseUserPolicy(
+    { rules: [{ id: 't-allow', action: 'allow', tool: 'Bash', match: '^corepack pnpm (test|build)\\b' }] },
+    'team.json',
+  );
+  const { tiers } = composePolicyTiers([
+    { policy: user, label: 'user policy' },
+    { policy: team, label: 'team policy' },
+  ]);
+  assert.equal(evaluateTiered({ tool: 'Bash', input: { command: 'corepack pnpm test' } }, tiers).action, 'allow');
+  assert.equal(evaluateTiered({ tool: 'Bash', input: { command: 'rm -rf ~/' } }, tiers).action, 'deny');
+});
+
+test('composePolicyTiers labels which source disabled a default rule', () => {
+  const user = parseUserPolicy({}, 'user.json');
+  const team = parseUserPolicy({ disable: ['deny-read-credentials'] }, 'team.json');
+  const { warnings } = composePolicyTiers([
+    { policy: user, label: 'user policy' },
+    { policy: team, label: 'team policy' },
+  ]);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0] ?? '', /disabled by team policy/);
+});
+
+test('the user AND team policy files stay covered by self-policy protection', () => {
+  for (const path of [
+    '/repo/ideal-harness.policy.json',
+    '/home/u/.config/ideal-harness.policy.json',
+    '/repo/.ideal-harness/team-policy.json',
+    '/repo/.ideal-harness/leases.json',
+  ]) {
     for (const tool of ['Edit', 'Write']) {
       assert.equal(
         evaluate({ tool, input: { file_path: path } }, DEFAULT_RULES).action,

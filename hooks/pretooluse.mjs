@@ -24,14 +24,13 @@ import {
   appendJournalEntry,
   applyFloorMode,
   buildJournalEntry,
-  composePolicy,
-  DEFAULT_RULES,
+  consumeLeaseIfDecided,
   evaluateTiered,
   FLOOR_MODE_ENV_VAR,
   floorMode,
-  loadUserPolicy,
   looksLikeInjection,
   redactSecrets,
+  resolveOperatorTiers,
   subjectFor,
 } from '../dist/guard/index.js';
 
@@ -93,22 +92,21 @@ async function main() {
     return;
   }
 
-  // Compose tiers: user policy overrides (if any) above the default floor.
-  // Any loader problem falls back to the pristine defaults — a broken user
-  // policy must never widen or silently narrow the floor.
-  let tiers = [DEFAULT_RULES];
-  try {
-    const user = loadUserPolicy();
-    const composed = composePolicy(user);
-    for (const message of [...user.warnings, ...composed.warnings]) {
-      warn(`policy: ${message}`);
-    }
-    tiers = composed.tiers;
-  } catch (error) {
-    warn(`policy: user policy load failed (${error?.message ?? error}); using default floor`);
+  // Compose tiers: capability leases first (most specific, shortest-lived),
+  // then personal user policy, then the shared/git-tracked team policy
+  // (.ideal-harness/team-policy.json — a plain committed file, never a
+  // hosted service), then the default floor. Same composition `ledger_verify`
+  // and `web_fetch`/`web_docs` use for their own non-interactive gating
+  // (resolve.ts) — one tier-resolution path, not three drifting copies. Any
+  // loader problem falls back to the pristine defaults — a broken policy
+  // file must never widen or silently narrow the floor.
+  const { tiers, warnings: tierWarnings } = resolveOperatorTiers();
+  for (const message of tierWarnings) {
+    warn(`policy: ${message}`);
   }
 
   let decision = evaluateTiered({ tool, input }, tiers);
+  consumeLeaseIfDecided(decision);
 
   // Block outbound secrets regardless of the base decision.
   if (EGRESS_TOOLS.has(tool)) {
@@ -129,10 +127,11 @@ async function main() {
     warn(`⚠ soft floor: "${decision.ruleId}" deny downgraded to ask for ${tool || 'tool'}`);
   }
 
-  // Explain-mode: a hard deny always names its rule and the knobs that could
-  // change it — the floor teaches, it doesn't stonewall.
+  // Explain-mode: every non-allow decision names its rule and the knobs that
+  // could change it — uniform across deny AND ask, not just hard denies, so
+  // "why am I being asked" is answered exactly like "why was this denied."
   let reason = applied.reason;
-  if (applied.action === 'deny') {
+  if (applied.action === 'deny' || applied.action === 'ask') {
     reason = `${reason} [rule=${applied.ruleId}; ${KNOB_HINT}]`;
   }
 
@@ -141,7 +140,7 @@ async function main() {
     const escalated = {
       action: 'ask',
       ruleId: 'injection-cue',
-      reason: 'injection cue detected in tool input; manual review',
+      reason: `injection cue detected in tool input; manual review [rule=injection-cue; ${KNOB_HINT}]`,
     };
     journal(tool, subject, escalated, mode, softened);
     emit(escalated.action, escalated.reason);

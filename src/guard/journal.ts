@@ -15,9 +15,17 @@
  *   - Fail-open, silent: journaling is observability, not enforcement. A full
  *     disk must never block a tool call.
  *   - `IDEAL_HARNESS_JOURNAL=off` is the kill-switch.
+ *   - Hash-chained: each entry stores `hash` = sha256(prevHash + its own
+ *     content) and `prevHash` = the previous entry's hash. Tampering with or
+ *     deleting a line breaks the chain from that point forward, so
+ *     `verifyJournalChain` can prove the journal wasn't quietly edited after
+ *     the fact — the same tamper-evidence property an audit log needs.
+ *     Entries written before this feature shipped have no hash (`undefined`)
+ *     and are reported as unverifiable, never as tampered.
  */
 
-import { appendFileSync, mkdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { FloorMode } from './bypass.js';
 import type { PolicyDecision } from './policy/types.js';
@@ -39,6 +47,67 @@ export interface GuardJournalEntry {
   readonly mode: FloorMode;
   /** Present (true) only when a deny was downgraded by soft mode. */
   readonly softened?: boolean;
+  /** Chain link to the previous entry's `hash` (or genesis for the first chained entry). Absent on pre-chain entries. */
+  readonly prevHash?: string;
+  /** sha256(prevHash + this entry's own content). Absent on pre-chain entries. */
+  readonly hash?: string;
+}
+
+/** The fixed anchor hash for the first entry ever chained in a journal. */
+export const JOURNAL_GENESIS_HASH = '0'.repeat(64);
+
+/** Deterministic hash of one entry's content, chained to `prevHash`. Pure — no I/O, no clock. */
+export function chainHash(prevHash: string, entry: GuardJournalEntry): string {
+  const payload = JSON.stringify({
+    prevHash,
+    ts: entry.ts,
+    tool: entry.tool,
+    subject: entry.subject,
+    action: entry.action,
+    ruleId: entry.ruleId,
+    mode: entry.mode,
+    softened: entry.softened === true,
+  });
+  return createHash('sha256').update(payload).digest('hex');
+}
+
+export interface ChainVerification {
+  readonly ok: boolean;
+  /** How many hash-bearing entries were actually verified (legacy entries don't count). */
+  readonly checked: number;
+  readonly brokenAtIndex?: number;
+  readonly reason?: string;
+}
+
+/**
+ * Verify tamper-evidence over a parsed entry list. Legacy entries (no `hash`)
+ * reset the chain anchor rather than failing — they predate this feature and
+ * are unverifiable, not tampered. Any hash-bearing entry whose own content no
+ * longer matches its stored hash, or whose `prevHash` doesn't link to the
+ * previous chained entry, breaks the chain from that index.
+ */
+export function verifyJournalChain(entries: readonly GuardJournalEntry[]): ChainVerification {
+  let expectedPrev: string | undefined;
+  let checked = 0;
+  for (let i = 0; i < entries.length; i += 1) {
+    const entry = entries[i];
+    if (entry === undefined) {
+      continue;
+    }
+    if (entry.hash === undefined || entry.prevHash === undefined) {
+      expectedPrev = undefined; // pre-chain entry: not itself verifiable, chain resumes after it
+      continue;
+    }
+    if (chainHash(entry.prevHash, entry) !== entry.hash) {
+      return { ok: false, checked, brokenAtIndex: i, reason: 'entry hash does not match its own content' };
+    }
+    if (expectedPrev !== undefined && entry.prevHash !== expectedPrev) {
+      return { ok: false, checked, brokenAtIndex: i, reason: 'entry is not linked to the previous chained entry' };
+    }
+    expectedPrev = entry.hash;
+    checked += 1;
+  }
+  return { ok: true, checked };
 }
 
 export interface BuildEntryInput {
@@ -75,6 +144,27 @@ export interface AppendOptions {
   env?: Record<string, string | undefined>;
 }
 
+/** Read the most recent entry's `hash` from an existing journal file, or genesis if none/unreadable. */
+function readLastHash(path: string): string {
+  try {
+    const lines = readFileSync(path, 'utf8')
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l !== '');
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+      try {
+        const parsed = JSON.parse(lines[i] as string) as { hash?: unknown };
+        return typeof parsed.hash === 'string' ? parsed.hash : JOURNAL_GENESIS_HASH;
+      } catch {
+        // skip a malformed trailing line and keep looking backward
+      }
+    }
+    return JOURNAL_GENESIS_HASH;
+  } catch {
+    return JOURNAL_GENESIS_HASH; // no file yet, or unreadable — start a fresh chain
+  }
+}
+
 /**
  * Append one entry. Returns true when written, false when disabled or on any
  * I/O failure — never throws. Observability must never block enforcement.
@@ -87,7 +177,9 @@ export function appendJournalEntry(entry: GuardJournalEntry, options: AppendOpti
   try {
     const path = journalPath(cwd);
     mkdirSync(dirname(path), { recursive: true });
-    appendFileSync(path, `${JSON.stringify(entry)}\n`, 'utf8');
+    const prevHash = readLastHash(path);
+    const chained: GuardJournalEntry = { ...entry, prevHash, hash: chainHash(prevHash, entry) };
+    appendFileSync(path, `${JSON.stringify(chained)}\n`, 'utf8');
     return true;
   } catch {
     return false;

@@ -15,6 +15,10 @@
     "ideal-harness-orchestrate": {
       "command": "node",
       "args": ["dist/orchestrate/cli/index.js", "mcp"]
+    },
+    "ideal-harness-web": {
+      "command": "node",
+      "args": ["dist/web/cli/index.js", "mcp"]
     }
   }
 }

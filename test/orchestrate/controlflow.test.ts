@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseCheckpoint, resumeFrom, serializeCheckpoint } from '../../src/orchestrate/checkpoint.js';
-import { TaskLedger } from '../../src/orchestrate/ledger.js';
+import { isTaskVerify, TaskLedger } from '../../src/orchestrate/ledger.js';
 import { LoopGuard } from '../../src/orchestrate/loopguard.js';
 import { ToolRegistry } from '../../src/orchestrate/registry.js';
 import { buildOrchestrateTools } from '../../src/orchestrate/runtime/mcp.js';
@@ -145,6 +145,91 @@ test('parseCheckpoint rejects a non-JSON embedded ledger up front', () => {
     () => parseCheckpoint(JSON.stringify({ phase: 'x', ledger: 'not json', ts: 1 })),
     /ledger is not valid JSON/,
   );
+});
+
+test('isTaskVerify validates the {command, expect?} shape', () => {
+  assert.equal(isTaskVerify({ command: 'pnpm test' }), true);
+  assert.equal(isTaskVerify({ command: 'pnpm test', expect: 'all pass' }), true);
+  assert.equal(isTaskVerify({ expect: 'no command' }), false);
+  assert.equal(isTaskVerify({ command: 123 }), false);
+  assert.equal(isTaskVerify(null), false);
+  assert.equal(isTaskVerify('pnpm test'), false);
+});
+
+test('add() carries an optional verify step, and it survives serialize/parse', () => {
+  const ledger = new TaskLedger();
+  const task = ledger.add('build the thing', undefined, { command: 'pnpm test', expect: 'all green' });
+  assert.deepEqual(task.verify, { command: 'pnpm test', expect: 'all green' });
+
+  const restored = TaskLedger.parse(ledger.serialize());
+  assert.deepEqual(restored.get(task.id)?.verify, { command: 'pnpm test', expect: 'all green' });
+});
+
+test('parse() drops a malformed verify field instead of failing the whole task', () => {
+  const restored = TaskLedger.parse(
+    JSON.stringify({ tasks: [{ id: 't1', title: 'x', status: 'pending', verify: { expect: 'no command field' } }] }),
+  );
+  assert.equal(restored.get('t1')?.verify, undefined);
+  assert.equal(restored.get('t1')?.title, 'x', 'the rest of the task must still load');
+});
+
+test('update() can attach a verify step to an existing task', () => {
+  const ledger = new TaskLedger();
+  const task = ledger.add('build the thing');
+  assert.equal(task.verify, undefined);
+  const updated = ledger.update(task.id, { verify: { command: 'node check.js' } });
+  assert.deepEqual(updated.verify, { command: 'node check.js' });
+});
+
+test('ledger_add rejects a malformed verify instead of silently dropping it', async () => {
+  const tools = buildOrchestrateTools(new TaskLedger(), new LoopGuard(), new SpendGovernor());
+  const add = tools.find((t) => t.name === 'ledger_add');
+  assert.ok(add);
+  const res = await add.handler({ title: 'x', verify: { expect: 'missing command' } });
+  assert.equal(res.isError, true);
+  assert.match(res.text, /invalid verify/);
+});
+
+test('ledger_add accepts a well-formed verify and it lands on the created task', async () => {
+  const ledger = new TaskLedger();
+  const tools = buildOrchestrateTools(ledger, new LoopGuard(), new SpendGovernor());
+  const add = tools.find((t) => t.name === 'ledger_add');
+  assert.ok(add);
+  const res = await add.handler({ title: 'x', verify: { command: 'pnpm test' } });
+  assert.notEqual(res.isError, true);
+  assert.match(res.text, /"command":"pnpm test"/);
+});
+
+test('ledger_verify errors on an unknown task id', async () => {
+  const tools = buildOrchestrateTools(new TaskLedger(), new LoopGuard(), new SpendGovernor());
+  const verify = tools.find((t) => t.name === 'ledger_verify');
+  assert.ok(verify);
+  const res = await verify.handler({ id: 'no-such-task' });
+  assert.equal(res.isError, true);
+});
+
+test('ledger_verify errors when the task has no verify.command', async () => {
+  const ledger = new TaskLedger();
+  const task = ledger.add('no verify set');
+  const tools = buildOrchestrateTools(ledger, new LoopGuard(), new SpendGovernor());
+  const verify = tools.find((t) => t.name === 'ledger_verify');
+  assert.ok(verify);
+  const res = await verify.handler({ id: task.id });
+  assert.equal(res.isError, true);
+  assert.match(res.text, /no verify\.command/);
+});
+
+test('ledger_verify leaves task status untouched when policy refuses to run it', async () => {
+  const ledger = new TaskLedger();
+  // An arbitrary Bash command has no default allow rule, so the default floor asks.
+  const task = ledger.add('risky task', undefined, { command: 'node -e "console.log(1)"' });
+  const tools = buildOrchestrateTools(ledger, new LoopGuard(), new SpendGovernor());
+  const verify = tools.find((t) => t.name === 'ledger_verify');
+  assert.ok(verify);
+  const res = await verify.handler({ id: task.id });
+  assert.notEqual(res.isError, true);
+  assert.match(res.text, /blocked/);
+  assert.equal(ledger.get(task.id)?.status, 'pending', 'status must not change when the command never ran');
 });
 
 test('checkpoint round-trips and resumes at the next pending task', () => {

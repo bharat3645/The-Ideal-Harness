@@ -40,6 +40,20 @@ export const USER_POLICY_FILENAME = 'ideal-harness.policy.json';
 /** Kill-switch: set to 'off' to ignore user policy files entirely. */
 export const USER_POLICY_ENV_VAR = 'IDEAL_HARNESS_USER_POLICY';
 
+/**
+ * Shared team policy — same file shape as `ideal-harness.policy.json`, but
+ * git-tracked at `.ideal-harness/team-policy.json` so a team's agreed-upon
+ * overrides travel with the repo and go through normal PR review, instead of
+ * every developer copy-pasting their own `~/.config` file. This is NOT a
+ * hosted/managed service (see VISION.md's anti-goals — no SaaS, ever); it is
+ * a plain committed JSON file, exactly as inspectable and offline as any
+ * other source file in the repo.
+ */
+export const TEAM_POLICY_FILENAME = 'team-policy.json';
+
+/** Kill-switch: set to 'off' to ignore the team policy file entirely. */
+export const TEAM_POLICY_ENV_VAR = 'IDEAL_HARNESS_TEAM_POLICY';
+
 const ACTIONS: ReadonlySet<string> = new Set<PolicyAction>(['allow', 'ask', 'deny']);
 
 export interface UserPolicy {
@@ -188,6 +202,76 @@ export function loadUserPolicy(options: LoadOptions = {}): UserPolicy {
     sources.push(path);
   }
   return { rules, disable, warnings, sources };
+}
+
+/** Where the shared team policy file lives for a given project root. */
+export function teamPolicyPath(cwd: string = process.cwd()): string {
+  return join(cwd, '.ideal-harness', TEAM_POLICY_FILENAME);
+}
+
+export interface LoadTeamOptions {
+  cwd?: string;
+  env?: Record<string, string | undefined>;
+  /** Explicit file path override, for tests. */
+  path?: string;
+}
+
+/** Load the shared team policy file. Missing is fine (most repos won't have one); broken warns. */
+export function loadTeamPolicy(options: LoadTeamOptions = {}): UserPolicy {
+  const { cwd = process.cwd(), env = process.env } = options;
+  if (env[TEAM_POLICY_ENV_VAR]?.trim().toLowerCase() === 'off') {
+    return { ...EMPTY, warnings: [`team policy disabled via ${TEAM_POLICY_ENV_VAR}=off`] };
+  }
+  const path = options.path ?? teamPolicyPath(cwd);
+  let text: string;
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch {
+    return EMPTY; // absent file: not an event
+  }
+  let doc: unknown;
+  try {
+    doc = JSON.parse(text);
+  } catch (error) {
+    return { ...EMPTY, warnings: [`${path}: invalid JSON (${(error as Error).message}); file ignored`] };
+  }
+  return parseUserPolicy(doc, path);
+}
+
+/**
+ * Compose N ordered policy sources into evaluation tiers, most operator-
+ * immediate first (e.g. `[personalUserPolicy, sharedTeamPolicy]`) — a
+ * personal rule beats a team rule beats the default floor, mirroring
+ * `composePolicy`'s single-source precedence. Each source's `disable` list is
+ * honored and warned about individually, labeled by source so it's obvious
+ * who softened what.
+ */
+export function composePolicyTiers(
+  sources: readonly { readonly policy: UserPolicy; readonly label: string }[],
+  defaults: readonly PolicyRule[] = DEFAULT_RULES,
+): ComposedPolicy {
+  const warnings: string[] = [];
+  const disabled = new Set<string>();
+  for (const { policy, label } of sources) {
+    for (const id of policy.disable) {
+      disabled.add(id);
+      const target = defaults.find((rule) => rule.id === id);
+      if (target === undefined) {
+        warnings.push(`disable (${label}): "${id}" matches no default rule (typo?)`);
+      } else if (target.action === 'deny') {
+        warnings.push(`⚠ default DENY rule "${id}" disabled by ${label} — floor softened`);
+      }
+    }
+  }
+  const floor = defaults.filter((rule) => !disabled.has(rule.id));
+  const tiers: (readonly PolicyRule[])[] = [];
+  for (const { policy } of sources) {
+    if (policy.rules.length > 0) {
+      tiers.push(policy.rules);
+    }
+  }
+  tiers.push(floor);
+  return { tiers, warnings };
 }
 
 /**

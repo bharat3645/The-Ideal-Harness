@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { GuardJournalEntry } from '../../src/guard/journal.js';
-import { commandShape, formatProposals, proposeAllowRules } from '../../src/guard/learn.js';
+import {
+  commandShape,
+  formatAskDigest,
+  formatProposals,
+  proposeAllowRules,
+  ratifyShape,
+  summarizeAsks,
+} from '../../src/guard/learn.js';
 import { evaluate } from '../../src/guard/policy/engine.js';
 
 function ask(subject: string, overrides: Partial<GuardJournalEntry> = {}): GuardJournalEntry {
@@ -74,4 +81,49 @@ test('formatProposals renders instructions and rules; empty case is explicit', (
   assert.match(text, /human/i);
   assert.match(text, /ideal-harness\.policy\.json/);
   assert.match(text, /u-allow-git-fetch/);
+});
+
+test('ratifyShape proposes from a single approval, bypassing the repeat threshold', () => {
+  const proposal = ratifyShape([ask('npm test')], 'npm test');
+  assert.ok(proposal);
+  assert.equal(proposal?.count, 1);
+  assert.equal(proposal?.rule.action, 'allow');
+});
+
+test('ratifyShape refuses a shape that ever hit a deny', () => {
+  const entries = [ask('rm -rf build'), { ...ask('rm -rf build'), action: 'deny' as const, ruleId: 'deny-x' }];
+  assert.equal(ratifyShape(entries, 'rm -rf'), null);
+});
+
+test('ratifyShape returns null when the shape was never asked', () => {
+  assert.equal(ratifyShape([ask('npm test')], 'yarn build'), null);
+});
+
+test('summarizeAsks groups Bash entries by normalized shape and counts them', () => {
+  const entries = [ask('corepack pnpm test'), ask('corepack pnpm build'), ask('git status', { tool: 'Bash' })];
+  const digest = summarizeAsks(entries);
+  assert.equal(digest.length, 2);
+  assert.equal(digest[0]?.shape, 'corepack pnpm');
+  assert.equal(digest[0]?.count, 2);
+});
+
+test('summarizeAsks groups non-Bash tools by raw subject', () => {
+  const entries = [ask('/repo/a.ts', { tool: 'Edit' }), ask('/repo/a.ts', { tool: 'Edit' })];
+  const digest = summarizeAsks(entries);
+  assert.equal(digest.length, 1);
+  assert.equal(digest[0]?.count, 2);
+  assert.equal(digest[0]?.tool, 'Edit');
+});
+
+test('summarizeAsks ignores non-ask decisions', () => {
+  const entries = [{ ...ask('git status'), action: 'allow' as const }];
+  assert.equal(summarizeAsks(entries).length, 0);
+});
+
+test('formatAskDigest renders counts; empty case is explicit', () => {
+  assert.match(formatAskDigest([]), /No ask decisions/);
+  const digest = summarizeAsks([ask('npm test'), ask('npm test')]);
+  const text = formatAskDigest(digest);
+  assert.match(text, /2x/);
+  assert.match(text, /npm test/);
 });

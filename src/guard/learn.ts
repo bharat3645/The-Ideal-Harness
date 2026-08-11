@@ -120,6 +120,120 @@ export function learnFromJournal(cwd: string = process.cwd(), minCount: number =
   return proposeAllowRules(parseJournal(text), minCount);
 }
 
+/**
+ * Ratify a single shape immediately, bypassing the repeat-count threshold —
+ * for when a human explicitly wants to trust something after just one
+ * approval instead of waiting for `DEFAULT_MIN_COUNT` repeats. Still refuses
+ * a shape that ever produced a deny or softened deny; still produces only a
+ * proposal, never an applied rule.
+ */
+export function ratifyShape(entries: readonly GuardJournalEntry[], shape: string): AllowProposal | null {
+  let poisoned = false;
+  let count = 0;
+  let sample: string | undefined;
+  for (const entry of entries) {
+    if (entry.tool !== 'Bash' || commandShape(entry.subject) !== shape) {
+      continue;
+    }
+    if (entry.action === 'deny' || entry.softened === true) {
+      poisoned = true;
+      continue;
+    }
+    if (entry.action === 'ask' && entry.ruleId !== 'egress-secrets') {
+      count += 1;
+      sample = sample ?? entry.subject;
+    }
+  }
+  if (poisoned || count === 0) {
+    return null;
+  }
+  return {
+    shape,
+    count,
+    sample: sample ?? shape,
+    rule: {
+      id: `u-allow-${slugify(shape)}`,
+      action: 'allow',
+      tool: 'Bash',
+      match: `^${escapeRegex(shape)}${SAFE_ARGS_TAIL}`,
+      description: `learned: "${shape}" ratified by one explicit human approval (proposed by ideal-harness-guard ratify; human-ratified)`,
+    },
+  };
+}
+
+/** Read the project journal and ratify one shape by id. Missing journal → null. */
+export function ratifyFromJournal(shape: string, cwd: string = process.cwd()): AllowProposal | null {
+  let text: string;
+  try {
+    text = readFileSync(journalPath(cwd), 'utf8');
+  } catch {
+    return null;
+  }
+  return ratifyShape(parseJournal(text), shape);
+}
+
+export interface AskDigestEntry {
+  readonly tool: string;
+  readonly shape: string;
+  readonly ruleId: string;
+  readonly count: number;
+  readonly firstTs: string;
+  readonly lastTs: string;
+  readonly sample: string;
+}
+
+interface MutableAskDigestEntry {
+  tool: string;
+  shape: string;
+  ruleId: string;
+  count: number;
+  firstTs: string;
+  lastTs: string;
+  sample: string;
+}
+
+/** Group journal 'ask' decisions by (tool, normalized shape) for one batch review pass. */
+export function summarizeAsks(entries: readonly GuardJournalEntry[]): AskDigestEntry[] {
+  const groups = new Map<string, MutableAskDigestEntry>();
+  for (const entry of entries) {
+    if (entry.action !== 'ask') {
+      continue;
+    }
+    const shape = entry.tool === 'Bash' ? commandShape(entry.subject) || entry.subject : entry.subject;
+    const key = `${entry.tool}:${shape}`;
+    const existing = groups.get(key);
+    if (existing === undefined) {
+      groups.set(key, {
+        tool: entry.tool,
+        shape,
+        ruleId: entry.ruleId,
+        count: 1,
+        firstTs: entry.ts,
+        lastTs: entry.ts,
+        sample: entry.subject,
+      });
+    } else {
+      existing.count += 1;
+      if (entry.ts < existing.firstTs) existing.firstTs = entry.ts;
+      if (entry.ts > existing.lastTs) existing.lastTs = entry.ts;
+    }
+  }
+  return [...groups.values()].sort((a, b) => b.count - a.count);
+}
+
+/** Human-facing digest of pending/recent asks, for one review pass instead of N interruptions. */
+export function formatAskDigest(digest: readonly AskDigestEntry[]): string {
+  if (digest.length === 0) {
+    return 'No ask decisions in the journal yet.\n';
+  }
+  const lines = [`${digest.length} distinct ask shape(s), most frequent first:`, ''];
+  for (const d of digest) {
+    lines.push(`${d.count}x  [${d.tool}] "${d.shape}"  (rule=${d.ruleId}, ${d.firstTs} .. ${d.lastTs})`);
+    lines.push(`      e.g. ${d.sample}`);
+  }
+  return `${lines.join('\n')}\n`;
+}
+
 /** Human-facing rendering with the ratification instructions. */
 export function formatProposals(proposals: readonly AllowProposal[]): string {
   if (proposals.length === 0) {

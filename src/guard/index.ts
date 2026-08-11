@@ -24,31 +24,65 @@ export {
   type Authority,
   type SourceFile,
   type SymbolVerdict,
+  type TieredSourceSymbols,
   verifyPlan,
+  verifyPlanStructural,
   verifySymbol,
+  verifySymbolStructural,
 } from './drift.js';
+export { type ExecResult, execCommand } from './exec.js';
 export { looksLikeInjection, type WrapOptions, wrapUntrusted } from './injection.js';
 export {
   type AppendOptions,
   appendJournalEntry,
   type BuildEntryInput,
   buildJournalEntry,
+  type ChainVerification,
+  chainHash,
   type GuardJournalEntry,
   JOURNAL_ENV_VAR,
+  JOURNAL_GENESIS_HASH,
   JOURNAL_SUBJECT_MAX,
   journalPath,
   parseJournal,
+  verifyJournalChain,
 } from './journal.js';
 export {
   type AllowProposal,
+  type AskDigestEntry,
   commandShape,
   DEFAULT_MIN_COUNT,
+  formatAskDigest,
   formatProposals,
   learnFromJournal,
   proposeAllowRules,
+  ratifyFromJournal,
+  ratifyShape,
+  summarizeAsks,
 } from './learn.js';
+export {
+  activeLeaseRules,
+  type CapabilityLease,
+  consumeLease,
+  type GrantLeaseInput,
+  grantLease,
+  isLeaseLive,
+  leasesPath,
+  leaseToRule,
+  loadLeases,
+  pruneExpired,
+  revokeLease,
+  saveLeases,
+} from './leases.js';
 export * from './policy/index.js';
+export { PROFILE_ENV_VAR, PROFILES, type Profile, type ProfileName, resolveProfile } from './profiles.js';
 export { type RedactionPattern, type RedactionResult, redactSecrets, SECRET_PATTERNS } from './redact.js';
+export {
+  consumeLeaseIfDecided,
+  type ResolvedTiers,
+  type ResolveOperatorTiersOptions,
+  resolveOperatorTiers,
+} from './resolve.js';
 export { buildSandboxCommand, type Platform, type SandboxCommand, type SandboxOptions, scrubEnv } from './sandbox.js';
 export { type ScrubResult, scrubToolOutput } from './scrub.js';
 export { type AccessRecord, SecretsBroker } from './secrets.js';

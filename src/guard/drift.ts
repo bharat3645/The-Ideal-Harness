@@ -57,3 +57,43 @@ export function verifySymbol(symbol: string, sources: readonly SourceFile[]): Sy
 export function verifyPlan(symbols: readonly string[], sources: readonly SourceFile[]): SymbolVerdict[] {
   return symbols.map((symbol) => verifySymbol(symbol, sources));
 }
+
+/**
+ * A file's pre-extracted symbol names plus which tier extracted them.
+ * Deliberately independent of `memory`'s own types (guard has no dependency
+ * on memory) — `memory`'s `CodeGraph.fileSymbolSets()` produces data shaped
+ * to match this at the MCP/caller boundary, not via a shared import.
+ */
+export interface TieredSourceSymbols {
+  readonly path: string;
+  readonly names: readonly string[];
+  readonly tier: 'treesitter' | 'regex';
+}
+
+/**
+ * Verify a symbol against PRE-EXTRACTED structural data rather than re-deriving
+ * it with a regex over raw content (`verifySymbol`'s approach). This is the
+ * tier that can legitimately reach `treesitter` authority and therefore prove
+ * absence: absence is provable only when EVERY source considered was
+ * extracted at the tree-sitter tier. A single regex-tier fallback anywhere in
+ * the set caps the whole verdict at `grep` authority — a source we could not
+ * parse might still hide the symbol, so we must not claim to have proven it
+ * absent. Same honesty-by-construction rule `verifySymbol` already applies,
+ * now actually reachable instead of permanently stuck at the grep floor.
+ */
+export function verifySymbolStructural(symbol: string, sources: readonly TieredSourceSymbols[]): SymbolVerdict {
+  const matches = sources.filter((s) => s.names.includes(symbol)).map((s) => s.path);
+  const found = matches.length > 0;
+  const allTreeSitter = sources.length > 0 && sources.every((s) => s.tier === 'treesitter');
+  const authority: Authority = allTreeSitter ? 'treesitter' : 'grep';
+  const hardBlock = !found && AUTHORITY_ORDER[authority] >= AUTHORITY_ORDER[ABSENCE_PROOF_FLOOR];
+  return { symbol, found, authority, matches, hardBlock };
+}
+
+/** Verify many symbols against pre-extracted structural data; returns per-symbol verdicts. */
+export function verifyPlanStructural(
+  symbols: readonly string[],
+  sources: readonly TieredSourceSymbols[],
+): SymbolVerdict[] {
+  return symbols.map((symbol) => verifySymbolStructural(symbol, sources));
+}

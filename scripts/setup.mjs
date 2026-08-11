@@ -10,7 +10,7 @@
  *
  * Idempotently merges (preserving any unrelated keys / foreign hooks):
  *   <target>/.claude/settings.json : SessionStart + PreToolUse + PostToolUse hooks
- *   <target>/.mcp.json             : the four engine MCP servers
+ *   <target>/.mcp.json             : the five engine MCP servers
  *
  * Re-running is safe: it replaces only the entries that point at THIS checkout.
  */
@@ -77,7 +77,8 @@ writeJson(settingsPath, settings);
 const mcpPath = join(target, '.mcp.json');
 const mcp = readJson(mcpPath);
 mcp.mcpServers ??= {};
-for (const pkg of ['guard', 'compress', 'memory', 'orchestrate']) {
+const MCP_MODULES = ['guard', 'compress', 'memory', 'orchestrate', 'web'];
+for (const pkg of MCP_MODULES) {
   mcp.mcpServers[`ideal-harness-${pkg}`] = { command: 'node', args: [cliPath(pkg), 'mcp'] };
 }
 writeJson(mcpPath, mcp);
@@ -85,5 +86,5 @@ writeJson(mcpPath, mcp);
 console.log(`Wired The Ideal Harness (${ROOT_POSIX}) into:\n  ${target}`);
 console.log('\nNext:');
 console.log('  1. Restart the Claude Code session in that project (hooks load at session start).');
-console.log('  2. Approve the 4 ideal-harness MCP servers when prompted (one-time trust gate).');
+console.log(`  2. Approve the ${MCP_MODULES.length} ideal-harness MCP servers when prompted (one-time trust gate).`);
 console.log('  3. The bottom statusline now shows the context-window meter (IH <used>/<window> <pct>%).');

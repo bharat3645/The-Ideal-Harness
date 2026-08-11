@@ -3,6 +3,18 @@
 Derived from DESIGN.md. v0.1 = `core → guard → compress → memory → orchestrate`. v0.2 = `web → skills → design → eval`.
 Status: PLAN. Companion to DESIGN.md.
 
+> **Historical document, kept as-is on purpose.** This is the original v0.1 plan
+> (2026-06-17), including its own "reality vs plan" delta section below — preserved
+> unedited past that point so a reader can see the original ask next to what shipped,
+> the same append-don't-rewrite convention `CHANGELOG.md` uses. It significantly
+> predates v0.1's completion, let alone the `v2 Phase 1`/`v2 Phase 2` work in
+> `CHANGELOG.md` (2026-08-10/11) — by then `web` had shipped as its own module (scoped
+> to fetch-only, not the browser daemon this plan describes), the single-plugin
+> `.claude-plugin/` layout had replaced the `packages/` scaffold below, and most of
+> "v0.2 adds" further down had shipped too. For current status, read `VISION.md §7`
+> (the roadmap table) and `decisions.md` (why each call was actually made), not this
+> file's own stale specifics.
+
 ## v0.1 reality vs this plan (read this first)
 
 This file is the original PLAN; a few items below describe the v0.2 target, not what v0.1 ships. The honest delta:

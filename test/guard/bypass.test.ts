@@ -9,6 +9,7 @@ import {
   skipPermissionsActive,
 } from '../../src/guard/bypass.js';
 import type { PolicyDecision } from '../../src/guard/policy/types.js';
+import { PROFILE_ENV_VAR } from '../../src/guard/profiles.js';
 
 test('off by default — empty env and no permission mode', () => {
   assert.equal(skipPermissionsActive({ env: {} }), false);
@@ -62,6 +63,25 @@ test('floorMode reads enforce/soft/bypass from the env var, case/space-insensiti
 test('bypass signals win over the floor-mode env var', () => {
   assert.equal(floorMode({ permissionMode: BYPASS_PERMISSION_MODE, env: { [FLOOR_MODE_ENV_VAR]: 'soft' } }), 'bypass');
   assert.equal(floorMode({ env: { [BYPASS_ENV_VAR]: '1', [FLOOR_MODE_ENV_VAR]: 'soft' } }), 'bypass');
+});
+
+test('floorMode falls back to the profile when FLOOR_MODE is unset but PROFILE is set', () => {
+  assert.equal(floorMode({ env: { [PROFILE_ENV_VAR]: 'strict' } }), 'enforce');
+  assert.equal(floorMode({ env: { [PROFILE_ENV_VAR]: 'fast' } }), 'soft');
+  assert.equal(floorMode({ env: { [PROFILE_ENV_VAR]: 'default' } }), 'soft');
+});
+
+test('floorMode: an explicit FLOOR_MODE always wins over a bundled PROFILE', () => {
+  assert.equal(floorMode({ env: { [PROFILE_ENV_VAR]: 'strict', [FLOOR_MODE_ENV_VAR]: 'soft' } }), 'soft');
+  assert.equal(floorMode({ env: { [PROFILE_ENV_VAR]: 'fast', [FLOOR_MODE_ENV_VAR]: 'enforce' } }), 'enforce');
+});
+
+test('floorMode: a broken PROFILE name fails strict, same rule as a broken FLOOR_MODE value', () => {
+  assert.equal(floorMode({ env: { [PROFILE_ENV_VAR]: 'yolo' } }), 'enforce');
+});
+
+test('floorMode: neither FLOOR_MODE nor PROFILE set still falls back to the soft default', () => {
+  assert.equal(floorMode({ env: { [PROFILE_ENV_VAR]: '' } }), 'soft');
 });
 
 test('applyFloorMode: soft downgrades deny to ask, preserving the reason', () => {

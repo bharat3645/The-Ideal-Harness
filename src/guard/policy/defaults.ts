@@ -22,14 +22,16 @@ export const DEFAULT_RULES: readonly PolicyRule[] = [
     id: 'deny-self-policy-write',
     action: 'deny',
     tool: 'Edit',
-    match: '\\.claude-plugin/|settings\\.json$|managed-settings|ideal-harness\\.policy|src/guard/policy/',
+    match:
+      '\\.claude-plugin/|settings\\.json$|managed-settings|ideal-harness\\.policy|src/guard/policy/|(?:^|/)\\.ideal-harness/leases\\.json$|(?:^|/)\\.ideal-harness/team-policy\\.json$',
     description: 'rewriting the harness policy/settings is denied (self-policy protection)',
   },
   {
     id: 'deny-self-policy-write-w',
     action: 'deny',
     tool: 'Write',
-    match: '\\.claude-plugin/|settings\\.json$|managed-settings|ideal-harness\\.policy|src/guard/policy/',
+    match:
+      '\\.claude-plugin/|settings\\.json$|managed-settings|ideal-harness\\.policy|src/guard/policy/|(?:^|/)\\.ideal-harness/leases\\.json$|(?:^|/)\\.ideal-harness/team-policy\\.json$',
     description: 'rewriting the harness policy/settings is denied (self-policy protection)',
   },
   {

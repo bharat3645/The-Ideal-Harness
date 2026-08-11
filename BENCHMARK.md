@@ -92,3 +92,61 @@ magnitude less context per question, ~99% reduction on the structured tool outpu
 dominate agent sessions, a deterministic secret net that caught 40 exposures, and an
 enforcement floor that blocked every dangerous operation it was shown — all below the LLM,
 all reproducible, all measured.
+
+## Addendum (2026-08-11) — tree-sitter tier, this repo as the target
+
+The original run above predates the tree-sitter structural tier (`src/memory/structural/
+treesitter.ts`) and the incremental/auto indexing path (`CodeGraph.addFileAuto`). This
+addendum re-runs the same `bench/benchmark.mjs` — modified only to call `addFileAuto` instead
+of the old sync, regex-only `addFile`, so the tree-sitter tier is actually exercised — and
+reports the new numbers honestly, without touching the original figures above.
+
+**Honest note on target substitution:** the original external target (`apps/worker/src`, the
+Voraxx security-analysis worker) is not present in this environment — this sandbox only has
+filesystem access to this repo itself. So this addendum indexes and scans **this repo's own
+`src/`** instead. That means the two runs are not apples-to-apples on scale (34k LOC vs. 7.7k
+LOC here) — the point of this addendum is the tree-sitter-vs-regex tier mix and the
+still-real, still-reproducible reduction/redaction/policy numbers on a second, independent
+codebase, not a bigger-is-better comparison.
+
+Reproduce: `node bench/benchmark.mjs src .` (run from the repo root).
+
+| | |
+|---|---|
+| Indexed source | this repo's `src/` — **83 files, 7,667 LOC** |
+| Index time | **283 ms** (cold, includes tree-sitter WASM parse) |
+| Symbols extracted | **1,137** |
+| Extraction tier | **83/83 files at tree-sitter tier, 0 at regex fallback** — every file parsed structurally; nothing fell back |
+| Secret-scan scope | whole repo — **165 text files** |
+
+**Memory — retrieval reduction**, same three queries as the original run:
+
+| Query | Symbols returned | Files pointed at | Subgraph tokens | Naive read tokens | Reduction |
+|---|---|---|---|---|---|
+| "policy evaluate deny rule" | 101 | 6 | 1,319 | 8,601 | **6.5×** |
+| "agent execution session" | 0 | 0 | 10 | 0 | **n/a** |
+| "compress tool result token" | 88 | 7 | 1,078 | 5,552 | **5.2×** |
+
+**Unflattering, reported plainly:** the "agent execution session" query returns **zero**
+matches on this repo's own source tree — none of those three terms literally appear as
+substrings of a symbol name in `src/`. The scorer is intentionally simple (lowercase
+term-in-name matching, no stemming/synonyms), so a query has to share vocabulary with actual
+identifiers to hit. On the original Voraxx target it scored 18.8×; here it scores nothing.
+That's real, not a bug — a token-name-matching retriever is only ever as good as the
+vocabulary overlap between the question and the code.
+
+**Compression**: the code-graph symbol JSON (1,137 rows) compressed 31,199 → 158 tokens
+(**99.5%**), consistent with the original run's json-array result.
+
+**Guard**: 8 secret-shaped hits across 2 files (test/report fixtures, same nature as the
+original run's 40/18); the same 10-request policy mix produced the same 2 allow / 4 ask / 4
+deny split; drift-guard again correctly found 3 real symbols and correctly declined to
+hard-block the 1 fabricated one via grep; **3 hidden/homoglyph characters** were flagged in
+source this time (the original target had 0 — this repo's fixtures contain deliberate
+homoglyph test data for the scanner itself, which is exactly what should trip it); the
+malicious-skill sample was blocked identically (high severity, 2 findings).
+
+**What this addendum adds:** proof the tree-sitter tier is live and load-bearing (100% of
+files on a real TS/JS codebase parsed structurally, not regex-approximated), on a second,
+independently-verifiable target, with one unflattering result stated as plainly as the good
+ones — per this project's own honesty rule.

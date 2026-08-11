@@ -7,7 +7,7 @@
  * in-memory + serializable for v0.1; a SQLite backend is a v0.2 swap.
  */
 
-export type ObservationType = 'bugfix' | 'feature' | 'decision' | 'security_alert' | 'note';
+export type ObservationType = 'bugfix' | 'feature' | 'decision' | 'security_alert' | 'failure' | 'note';
 
 export interface Observation {
   readonly id: string;
@@ -18,9 +18,16 @@ export interface Observation {
   readonly tags?: readonly string[];
   /** Workspace namespace this record belongs to (isolation defence-in-depth). */
   readonly workspace?: string;
+  /**
+   * Provenance: how many of the claim's significant terms were corroborated by
+   * tool-call evidence (curator.ts), and which tool matched best. Absent means
+   * "never checked" (most CLI/skill writes), not "unverified" — do not read
+   * absence as a negative signal.
+   */
+  readonly evidence?: { readonly overlap: number; readonly matchedTool?: string };
 }
 
-const VALID_TYPES = new Set<ObservationType>(['bugfix', 'feature', 'decision', 'security_alert', 'note']);
+const VALID_TYPES = new Set<ObservationType>(['bugfix', 'feature', 'decision', 'security_alert', 'failure', 'note']);
 
 /**
  * Episodic store bound to a single workspace. Every record it creates is stamped
@@ -44,12 +51,51 @@ export class EpisodicStore {
     return record;
   }
 
+  /** Replace the store's contents wholesale (used by consolidation and load-from-disk). */
+  replaceAll(observations: readonly Observation[]): void {
+    this.observations.length = 0;
+    this.observations.push(...observations);
+    for (const o of observations) {
+      const n = Number(o.id.match(/^obs-(\d+)$/)?.[1] ?? 0);
+      if (n > this.counter) {
+        this.counter = n;
+      }
+    }
+  }
+
   all(): readonly Observation[] {
     return this.observations;
   }
 
   toJSON(): readonly Observation[] {
     return this.observations;
+  }
+
+  /** Serialize to the on-disk snapshot format (persist.ts). */
+  serialize(): string {
+    return JSON.stringify({ workspace: this.workspaceKey, observations: this.observations });
+  }
+
+  /**
+   * Parse a snapshot. Throws on totally invalid JSON (callers quarantine);
+   * tolerates individual corrupt/foreign-workspace entries within valid JSON,
+   * matching CodeGraph.parse's and TaskLedger.parse's contract.
+   */
+  static parse(json: string, workspaceKey: string = 'default'): EpisodicStore {
+    const parsed = JSON.parse(json) as { workspace?: unknown; observations?: unknown };
+    const store = new EpisodicStore(workspaceKey);
+    const rawObservations = Array.isArray(parsed.observations) ? parsed.observations : [];
+    const valid = rawObservations.filter(
+      (o): o is Observation =>
+        typeof o === 'object' &&
+        o !== null &&
+        typeof (o as Observation).id === 'string' &&
+        typeof (o as Observation).ts === 'number' &&
+        VALID_TYPES.has((o as Observation).type) &&
+        typeof (o as Observation).text === 'string',
+    );
+    store.replaceAll(filterByWorkspace(valid, workspaceKey));
+    return store;
   }
 }
 

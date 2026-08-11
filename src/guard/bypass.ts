@@ -22,6 +22,7 @@
  */
 
 import type { PolicyDecision } from './policy/types.js';
+import { PROFILE_ENV_VAR, resolveProfile } from './profiles.js';
 
 export const BYPASS_ENV_VAR = 'IDEAL_HARNESS_DANGEROUSLY_SKIP_PERMISSIONS';
 
@@ -74,12 +75,16 @@ export function skipPermissionsActive(signals: BypassSignals = {}): boolean {
 }
 
 /**
- * Resolve the operator's floor mode for this session. Bypass signals (the
- * Claude Code flag or the skip-permissions env var) win; otherwise
- * `IDEAL_HARNESS_FLOOR_MODE` selects the mode. Unset/empty resolves to the
- * soft default; an explicitly set but unrecognized value resolves to
- * `enforce` (a broken operator signal must never soften). Pure, like
- * `skipPermissionsActive`, so it is unit-testable without a live host.
+ * Resolve the operator's floor mode for this session, in order:
+ *   1. bypass signals (the Claude Code flag or the skip-permissions env var) — win outright.
+ *   2. `IDEAL_HARNESS_FLOOR_MODE`, the single-knob override — explicit beats bundled.
+ *   3. `IDEAL_HARNESS_PROFILE` (`strict`/`default`/`fast`, see `profiles.ts`) — a named
+ *      bundle selecting this same knob, so a profile is just a shortcut, never a new mechanism.
+ *   4. the soft default.
+ * An explicitly set but unrecognized `IDEAL_HARNESS_FLOOR_MODE` value resolves to `enforce`
+ * (a broken operator signal must never soften) — `resolveProfile` applies the identical rule
+ * to a broken profile name. Pure, like `skipPermissionsActive`, so it is unit-testable
+ * without a live host.
  */
 export function floorMode(signals: BypassSignals = {}): FloorMode {
   if (skipPermissionsActive(signals)) {
@@ -88,7 +93,7 @@ export function floorMode(signals: BypassSignals = {}): FloorMode {
   const { env = process.env } = signals;
   const raw = env[FLOOR_MODE_ENV_VAR]?.trim().toLowerCase();
   if (raw === undefined || raw === '') {
-    return DEFAULT_FLOOR_MODE;
+    return env[PROFILE_ENV_VAR]?.trim() ? resolveProfile(env).floorMode : DEFAULT_FLOOR_MODE;
   }
   if (raw === 'bypass' || raw === 'soft' || raw === 'enforce') {
     return raw;

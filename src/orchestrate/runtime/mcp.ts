@@ -14,9 +14,12 @@ import {
   type McpTool,
   type McpToolResult,
 } from '../../core/index.js';
-import { isTaskStatus, TASK_STATUSES, TaskLedger } from '../ledger.js';
+import { consumeLeaseIfDecided, resolveOperatorTiers } from '../../guard/index.js';
+import { isTaskStatus, isTaskVerify, TASK_STATUSES, TaskLedger } from '../ledger.js';
 import { LoopGuard } from '../loopguard.js';
 import { SpendGovernor } from '../spend.js';
+import { runVerify } from '../verify.js';
+import { createWorktree, listWorktrees, removeWorktree } from '../worktree.js';
 
 /** Result of a persist attempt — lets handlers surface durability failures. */
 export interface PersistResult {
@@ -46,13 +49,34 @@ export function buildOrchestrateTools(
   return [
     {
       name: 'ledger_add',
-      description: 'Add a task to the durable ledger. Returns the created task.',
-      inputSchema: { type: 'object', properties: { title: { type: 'string' } }, required: ['title'] },
-      handler: (args) => withPersist(ledger.add(asString(args, 'title', ''))),
+      description:
+        'Add a task to the durable ledger, optionally with a verify {command, expect?} so "done" is a ' +
+        'measurement, not an assertion. Returns the created task.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          verify: {
+            type: 'object',
+            properties: { command: { type: 'string' }, expect: { type: 'string' } },
+            required: ['command'],
+          },
+        },
+        required: ['title'],
+      },
+      handler: (args) => {
+        if (args.verify !== undefined && !isTaskVerify(args.verify)) {
+          return {
+            text: JSON.stringify({ error: 'invalid verify: expected {command: string, expect?: string}' }),
+            isError: true,
+          };
+        }
+        return withPersist(ledger.add(asString(args, 'title', ''), undefined, args.verify));
+      },
     },
     {
       name: 'ledger_update',
-      description: 'Update a ledger task status/artifact/notes.',
+      description: 'Update a ledger task status/artifact/notes/verify.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -60,6 +84,11 @@ export function buildOrchestrateTools(
           status: { type: 'string' },
           artifact: { type: 'string' },
           notes: { type: 'string' },
+          verify: {
+            type: 'object',
+            properties: { command: { type: 'string' }, expect: { type: 'string' } },
+            required: ['command'],
+          },
         },
         required: ['id'],
       },
@@ -83,7 +112,54 @@ export function buildOrchestrateTools(
         if (args.notes !== undefined) {
           patch.notes = asString(args, 'notes');
         }
+        if (args.verify !== undefined) {
+          if (!isTaskVerify(args.verify)) {
+            return {
+              text: JSON.stringify({ error: 'invalid verify: expected {command: string, expect?: string}' }),
+              isError: true,
+            };
+          }
+          patch.verify = args.verify;
+        }
         return withPersist(ledger.update(asString(args, 'id'), patch));
+      },
+    },
+    {
+      name: 'ledger_verify',
+      description:
+        "Actually run a task's verify.command (policy-gated to an unsoftened allow, sandboxed when the " +
+        "platform supports it) and set status to done/failed from the REAL result, not the agent's self-report. " +
+        'Refuses to run (status untouched) when the policy decision is not an explicit allow.',
+      inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+      handler: async (args) => {
+        const id = asString(args, 'id');
+        const task = ledger.get(id);
+        if (task === undefined) {
+          return { text: JSON.stringify({ error: `no ledger task with id "${id}"` }), isError: true };
+        }
+        if (task.verify === undefined) {
+          return { text: JSON.stringify({ error: `task "${id}" has no verify.command set` }), isError: true };
+        }
+        // Resolve the SAME operator-configured tier stack (leases, personal
+        // and team policy, then defaults) the interactive PreToolUse hook
+        // uses — without this, ledger_verify would only ever see the bare
+        // default floor (which asks for arbitrary Bash) and could never be
+        // enabled no matter how the operator configures policy.
+        const { tiers } = resolveOperatorTiers();
+        const result = await runVerify(task.verify, { policyTiers: tiers });
+        consumeLeaseIfDecided(result.decision);
+        if (!result.ran) {
+          return {
+            text: JSON.stringify({
+              task,
+              result,
+              note: `blocked: policy decision was "${result.decision.action}" — run it manually via an already-approved Bash call and update the task yourself`,
+            }),
+          };
+        }
+        const notes = `verify: ${result.ok ? 'PASSED' : 'FAILED'} (exit ${result.exitCode}${result.expectMatched === false ? ', expect not matched' : ''})`;
+        const updated = ledger.update(id, { status: result.ok ? 'done' : 'failed', notes });
+        return withPersist({ task: updated, result });
       },
     },
     {
@@ -93,6 +169,40 @@ export function buildOrchestrateTools(
       handler: () => ({
         text: JSON.stringify({ progress: ledger.progress(), next: ledger.nextPending() ?? null, tasks: ledger.all() }),
       }),
+    },
+    {
+      name: 'worktree_create',
+      description:
+        'Create an isolated git worktree + branch for a fanned-out task, so concurrent implementers never ' +
+        'collide on the same working tree. Lives under .ideal-harness/worktrees/<id>.',
+      inputSchema: {
+        type: 'object',
+        properties: { id: { type: 'string' }, baseRef: { type: 'string' } },
+        required: ['id'],
+      },
+      handler: async (args) => {
+        const result = await createWorktree(asString(args, 'id'), { baseRef: asString(args, 'baseRef', 'HEAD') });
+        return { text: JSON.stringify(result), ...(result.ok ? {} : { isError: true }) };
+      },
+    },
+    {
+      name: 'worktree_list',
+      description: 'List worktrees created for fanned-out tasks.',
+      inputSchema: { type: 'object', properties: {} },
+      handler: async () => ({ text: JSON.stringify(await listWorktrees()) }),
+    },
+    {
+      name: 'worktree_remove',
+      description: 'Remove a fanned-out task worktree and its branch.',
+      inputSchema: {
+        type: 'object',
+        properties: { id: { type: 'string' }, force: { type: 'boolean' } },
+        required: ['id'],
+      },
+      handler: async (args) => {
+        const result = await removeWorktree(asString(args, 'id'), { force: args.force === true });
+        return { text: JSON.stringify(result), ...(result.ok ? {} : { isError: true }) };
+      },
     },
     {
       name: 'loop_check',

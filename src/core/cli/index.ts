@@ -3,11 +3,13 @@
  * ideal-harness — substrate CLI dispatcher.
  *
  * Commands:
- *   validate [root]                       validate manifests + skill frontmatter
- *   gen-hosts <template> <outDir> [...]   render per-host SKILL.md files
+ *   validate [root]                            validate manifests + skill frontmatter
+ *   gen-hosts <template> <outDir> [...]        render one skill template for per-host output
+ *   render-skills <skillsDir> <outDir> [...]   render EVERY skill under skillsDir for per-host output
  */
 
 import { runGenHosts } from './gen-hosts.js';
+import { runRenderSkills } from './render-skills.js';
 import { runCli } from './runtime.js';
 import { runValidate } from './validate.js';
 
@@ -18,10 +20,12 @@ async function main(): Promise<number> {
       return runValidate(rest[0] ?? process.cwd());
     case 'gen-hosts':
       return runGenHosts(rest);
+    case 'render-skills':
+      return runRenderSkills(rest);
     case undefined:
     case '--help':
     case '-h':
-      process.stdout.write('usage: ideal-harness <validate|gen-hosts> [args]\n');
+      process.stdout.write('usage: ideal-harness <validate|gen-hosts|render-skills> [args]\n');
       return command === undefined ? 1 : 0;
     default:
       process.stderr.write(`unknown command: ${command}\n`);

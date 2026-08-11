@@ -1,11 +1,12 @@
 # VISION — What "An Actual Ideal Harness" Means
 
-> Companion to DESIGN.md (the 9-layer architecture) and CLAUDE.md (the live floor).
-> DESIGN.md says what we build and from where. This document says what the harness
-> could *become* — the full possibility space, explored honestly: what ships today,
-> what is planned, what is speculative, and what we refuse to build. Written 2026-07-07,
-> after v0.1 (core, guard, compress, memory, orchestrate) and the operator-control work
-> (floor modes, user policy tiers).
+> Companion to DESIGN.md (the 9-layer architecture), CLAUDE.md (the live floor),
+> decisions.md (why each call below was actually made, ADR-lite), and flow.md (the
+> runtime sequences these capabilities produce). DESIGN.md says what we build and from
+> where. This document says what the harness could *become* — the full possibility
+> space, explored honestly: what ships today, what is planned, what is speculative, and
+> what we refuse to build. Written 2026-07-07, after v0.1 (core, guard, compress,
+> memory, orchestrate) and the operator-control work (floor modes, user policy tiers).
 
 ---
 
@@ -56,7 +57,7 @@ not through sprawl.
 | **Solo dev on Claude Code** | Everything automatic: floor, compression, memory, statusline. Zero config. | v0.1 today |
 | **The cautious beginner** | `strict` profile: more asks, and every denial *teaches* — names the rule, the risk, and the knob. Explain-mode as default. | Planned (profiles §4.3) |
 | **The expert in flow** | `fast` profile: tuned allowlist proposed from their own ask-history, ratified once, then out of the way. Ask-fatigue is a real safety failure — people who are over-prompted stop reading prompts. | Planned (§4.3, §5.2) |
-| **The team** | Policy-as-code: `ideal-harness.policy.json` reviewed in PRs; a managed org tier *above* user tier (managed > user > default — mirrors Claude Code's managed settings); shared structural memory, per-user episodic. | Partially (user tier shipped; managed tier + shared memory planned) |
+| **The team** | Policy-as-code: `ideal-harness.policy.json` reviewed in PRs; a shared tier *above* user policy so a team's agreed rules travel with the repo; shared structural memory, per-user episodic. | Mostly shipped — `.ideal-harness/team-policy.json` is git-tracked and PR-reviewed (leases > user > team > default); it's a committed file, not a managed/hosted service, by deliberate choice (decisions.md D014). Shared structural memory across teammates is still per-project, not cross-teammate. |
 | **The enterprise operator** | Append-only, hash-chained audit journal of every decision; compliance export; centrally pinned floor no local softening can cross. | Planned (§4.2, §6.1) |
 | **The non-Claude-host user** (Cursor, Codex, Gemini…) | Tier-2 MCP servers + CLIs (shipped), multi-host skill generation (shipped), and eventually a host shim that wraps any agent loop to restore automatic enforcement. | Partially |
 | **The non-coder** (writer, researcher, ops) | Same floor, memory, compression over documents and web instead of code. Needs pluggable subject-extraction in the policy engine (today `subjectFor` is code-tool-centric). | Speculative (§6.3) |
@@ -75,7 +76,8 @@ module (anti-overlap holds).
 ### 3.1 `compress` → the context engine
 
 Exists: deterministic tool-result compression (JSON sampling, log RLE, stack collapse),
-CCR lossless retrieval, token gate, caveman output mode, context-window statusline.
+CCR lossless retrieval, token gate, caveman output mode (token-compression axis) + focus output
+mode (structure/legibility axis — the two compose), context-window statusline.
 
 Could become:
 
@@ -99,117 +101,135 @@ Could become:
 
 ### 3.2 `memory` → the knowledge engine
 
-Exists: structural code-graph (grep tier) with token-budgeted subgraph retrieval,
-episodic BM25 store, curator (claims reconciled against tool evidence), workspace
-isolation by construction.
+Exists: structural code-graph — regex tier by default, zero deps; an **optional** tree-sitter
+tier (TS/JS/TSX/Python, degrading per-file to regex on any parse failure) when the operator
+installs `web-tree-sitter` + grammar packages — with token-budgeted subgraph retrieval, now
+persisted (`<root>/.ideal-harness/memory/graph.json`) and incrementally re-indexed (only changed
+files are re-extracted); episodic BM25 store; curator (claims reconciled against tool evidence);
+workspace isolation by construction. The drift-guard is sharper for it (§3.3): a structural
+verdict built from an all-tree-sitter source set can legitimately hard-block.
+
+**Shipped 2026-08-11:** decision ledger (as `decisions.md` — a file, not a store; see
+decisions.md D020) · failure memory (`ObservationType: 'failure'`) · consolidation &
+decay (`episodic/consolidate.ts`: dedup + prune-to-cap, exempting decision/failure/
+security_alert) · provenance (`Observation.evidence`, stamped by `memory_write`) ·
+consented sharing (the Obsidian bridge, CLI-only export/import — decisions.md D017).
 
 Could become:
 
-- **Tree-sitter graph tier** (v0.2, already roadmapped) — real symbols, real edges;
-  LSP/SCIP later. The drift-guard gets sharper for free.
+- **Tree-sitter tier on by default, more languages** — today's tier is optional (a devDependency
+  the operator adds) and covers TS/JS/TSX/Python; making it a default install and widening
+  language coverage (Go/Rust/Java) is the next step. LSP/SCIP remain further out.
 - **Temporal memory.** Git-aware: *when* did X change, what did the file look like at
   the decision point. Answers "why is this here" — the question agents ask most.
-- **Decision ledger.** Auto-extract "chose X over Y because Z" moments into durable,
-  citable records. The single highest-value memory type for long-lived projects.
-- **Failure memory.** Approaches that failed, with evidence. Fresh-context subagents
-  burn most of their waste re-walking dead ends; this is the fix.
-- **Consolidation & decay.** The curator periodically compacts stale episodes into
-  semantic facts and drops what no evidence supports. Memory that only grows is a
-  landfill, not a memory.
-- **Provenance everywhere.** Every record cites the tool-call evidence it came from.
-  A memory you can't trace is a rumor. (Curator partially does this — make it a
-  contract, not a habit.)
 - **Hybrid retrieval** — BM25 + int8-vector RRF rerank (DESIGN.md L2, deferred).
   BM25 stays the deterministic default; vectors are a rerank, never the source of truth.
-- **Consented sharing.** Explicit export/import of memory bundles across projects or
-  teammates. Isolation stays the default forever; crossing is a visible human act.
+- **Provenance made mandatory**, not just available — today `evidence` is optional and
+  stamped only when the caller supplies it; requiring it end-to-end is a further step.
 
 ### 3.3 `guard` → the trust engine
 
 Exists: deny-wins fail-closed policy engine, tiered evaluation (user > default),
-floor modes (enforce/soft/bypass), user policy file with kill-switch, always-on secret
-redaction, injection fencing, skill vetting (signatures + homoglyphs), drift-guard
-authority ladder, sandbox command builder, secrets broker.
+floor modes (enforce/soft/bypass) selectable directly or via named **profiles**
+(`strict`/`default`/`fast`, `IDEAL_HARNESS_PROFILE` — a bundle, not a new mechanism), user
+policy file with kill-switch, always-on secret redaction, injection fencing, skill vetting
+(signatures + homoglyphs), a drift-guard authority ladder that now actually reaches
+`treesitter` (`verify_symbol_structural` hard-blocks a symbol proven absent across an
+all-tree-sitter source set), sandbox command builder, secrets broker.
+
+**Shipped 2026-08-11:** audit journal (hash-chained, `verifyJournalChain`) · capability
+leases (time/call-boxed, CLI-grant-only — decisions.md D016) · one-shot → standing-rule
+ratification (`ratifyShape`/`ratifyFromJournal`, `guard ratify`) · a policy tier above
+personal user policy — shipped as `.ideal-harness/team-policy.json`, git-tracked, **not**
+a managed/hosted service (decisions.md D014; the "org-pinned, immune to local softening"
+framing below was the aspiration — what shipped is "team-agreed, reviewed via normal
+PRs," a deliberately smaller and more honest claim) · sandbox auto-application for
+`ledger_verify`'s spawned command (not yet for every Bash call generally) · explain-mode
+uniform across deny **and** ask, naming the rule id and operator knobs both ways.
 
 Could become:
 
-- **Audit journal.** Append-only, hash-chained log of every decision: rule, mode,
-  softenings, who bypassed when. The single feature that turns "trust me" into
-  "check for yourself." Home: guard writes, observe (§6.1) reads.
-- **Capability leases.** Time-boxed or count-boxed allows: "allow `git push` for
-  30 minutes / for 3 uses." An approval that expires is safer than a standing rule,
-  and *feels* safer, so humans grant it more honestly.
-- **One-shot → standing-rule ratification.** When the human approves the same ask
-  repeatedly, guard *proposes* the narrow allowlist entry (exact command shape, not a
-  wildcard) — into the policy file only by human hand. Ask-fatigue reduction with the
-  human in the loop. (The global /fewer-permission-prompts idea, done below the model.)
 - **Path-scoped write capabilities.** "This task may write `src/compress/**` only."
   Orchestrate declares scope per task; guard enforces it. Blast-radius control for
-  subagents.
+  subagents. Still not built — leases (shipped) bound a capability by *time/count*, not
+  by *path*; this is a different axis, still open.
 - **Taint escalation.** Content that entered fenced as untrusted and later flows into
   a Bash command or Write → automatic escalation to ask. The fence today informs the
   model; taint tracking would *enforce* it. (Hard to do precisely; even a
   conservative same-turn heuristic beats nothing. Marked speculative.)
 - **Egress domain allowlist.** First-use prompt per domain, remembered thereafter —
   Anthropic-checklist alignment, straightforward with the existing tier machinery.
-- **Sandbox auto-application** (roadmapped) — PreToolUse `updatedInput` wraps risky
-  Bash in Seatbelt/bubblewrap automatically instead of waiting to be asked.
+- **General PreToolUse sandbox auto-application.** Shipped for `ledger_verify`'s own
+  spawned command; wrapping an arbitrary risky Bash call automatically via
+  `updatedInput` before it reaches the model's own tool execution is still open.
 - **Dry-run / what-if mode.** `ideal-harness guard simulate <command|policy-file>`:
   show what would be denied/asked under a proposed policy before adopting it. Makes
   policy editing safe to experiment with.
-- **Managed tier.** A third tier above user: `managed > user > default`, pinned by an
-  org, immune to local softening. The enterprise story, structurally identical to the
-  user tier (shipped machinery reused).
-- **Explain-mode denials.** Every deny/ask names the rule id, the risk in one plain
-  sentence, and the operator knob that could change it. Teaching floor, not a wall.
-  (Partially shipped — denials carry rule descriptions; make the knob-pointer uniform.)
+- **A hosted/managed tier**, if ever — deliberately not pursued; the anti-SaaS anti-goal
+  (§6.2) treats the git-tracked team tier as the correct shape for "centrally agreed,"
+  not a stepping stone toward one.
 
 ### 3.4 `orchestrate` → the work engine
 
-Exists: durable task ledger, tool registry, loop/no-progress guard (SHA-256), spend
-governor, API retry/backoff, checkpoint/resume, brainstorm HARD-GATE and
+Exists: durable task ledger — every task may now carry a structural `verify: {command,
+expect?}` field, set at creation time and round-tripped through serialize/parse and the
+`ledger_add`/`ledger_update` MCP tools, with `implementer`/`reviewer` reading and writing it
+explicitly instead of relying on brief prose ("done" is a measurement, not vibes — this was
+this section's own highest-leverage call) — tool registry, loop/no-progress guard (SHA-256),
+spend governor, API retry/backoff, checkpoint/resume, brainstorm HARD-GATE and
 subagent-driven-development skills.
 
-Could become:
+**Shipped 2026-08-11:** parallel fan-out with worktree isolation (`worktree.ts` —
+real `git worktree` calls; merge/conflict gates and guard's path-scoped capabilities
+are still open, see §3.3) · batch ask digest (`summarizeAsks`/`guard asks` — lives in
+guard, since asks are guard's decision, but directly closes this line) · outcome retro
+(`retro.ts`, `orchestrate retro`).
 
-- **Verification-first tasks.** Every ledger task carries *how to verify* (command,
-  expected observation) at creation time; the review gate runs it, not vibes. "Done"
-  becomes a measurement. This is the highest-leverage orchestration upgrade.
-- **Parallel fan-out with worktree isolation.** Independent tasks run concurrently in
-  git worktrees; the ledger already models states, add merge/conflict gates. Guard's
-  path-scoped capabilities (§3.3) keep the blast radii disjoint.
-- **Batch ask queue.** HITL asks accumulate into a queue the human clears in one
-  pass, instead of interrupt-per-item. Approvals get *more* thoughtful when they're
-  not blocking a spinner. (12-factor #7 done humanely.)
+Could become:
+- **Merge/conflict gates for fanned-out worktrees.** Worktree creation/removal is
+  shipped; a controller-side policy for merging concurrent branches back (or detecting
+  conflicting edits before merge) is not.
 - **Stall → replan proposal.** The loop guard detects no-progress today; the upgrade
   is producing a concrete replan diff ("tasks 3–5 assumed X; X is false; propose…")
   for human approval, not just an alarm.
 - **Model routing by task class (speculative).** Mechanical steps to a cheap model,
   judgment steps to a large one. Depends on host support; on Tier-2 the registry can
-  hold cost hints and let the host route. Honest scope: advisory, not enforcement.
-- **Outcome retro.** The ledger already knows what shipped, was reworked, or died —
-  a `retro` report generator turns it into a weekly honest summary. Feeds §5.
+  hold cost hints and let the host route. Honest scope: advisory, not enforcement. An
+  external comparison review (decisions.md D021) confirmed this is correctly *not* a
+  gap — it's a host-dependent limitation stated honestly, not a missing feature.
 - **Scheduled/background runs.** Long autonomous work in a governed lane: spend cap,
-  checkpoint cadence, batch-ask on wake. The primitives all exist; this is wiring.
+  checkpoint cadence, batch-ask on wake. The primitives all exist (spend governor, loop
+  guard, ask digest, ledger checkpoint); this is wiring them into one scheduled entry
+  point, not new mechanism.
 
 ### 3.5 `core` → the substrate
 
 Exists: loader, manifest + frontmatter validation, dependency-free skill templating,
-multi-host generation (claude/codex/gemini/cursor), MCP server harness, setup script.
+multi-host generation (claude/codex/gemini/cursor), MCP server harness, setup script, and
+**`ideal-harness doctor`** (`scripts/doctor.mjs`, `pnpm run doctor`) — one command answering
+are hooks wired, is dist built, do all 5 MCP servers actually boot and answer `initialize`,
+is the policy file parseable, which floor mode is live, is `.ideal-harness/` writable.
+Also shipped: `core render-skills` (below) and named profiles (§4.3).
+
+**Shipped 2026-08-11, narrower than originally scoped here:** a host shim
+(`core render-skills`) — but only for skill *text* (multi-host `SKILL.md` generation),
+not for hook portability. See decisions.md D013: the "restores automatic enforcement on
+hosts with no hook system" ambition below is explicitly **not** what shipped, and is
+still the open, large, speculative build.
 
 Could become:
 
-- **`ideal-harness doctor`.** One command: are hooks wired, is dist built, do the MCP
-  servers start, is the policy file parseable, which floor mode is live, what got
-  softened. Self-diagnosis is the first thing every confused user needs.
-- **Plugin API for third-party modules.** The five modules consume core's substrate;
-  formalize that contract so others can build an L-something without forking.
+- **Plugin API for third-party modules.** The five (now six) modules consume core's
+  substrate; formalize that contract so others can build an L-something without forking.
 - **Versioned config migrations.** Policy files and settings evolve; migrate them
   explicitly, never guess.
-- **Host shim (the Tier-2 endgame).** A thin wrapper that runs any MCP-capable
-  agent's tool loop *through* the guard/compress pipeline — restoring automatic
-  enforcement on hosts with no hook system. This is the single biggest "every
-  person" unlock, and honestly a large build. Speculative until scoped.
+- **Host shim, the hook-portability half (the actual Tier-2 endgame).** A thin wrapper
+  that runs any MCP-capable agent's tool loop *through* the guard/compress pipeline —
+  restoring *automatic* enforcement on hosts with no hook system, not just portable
+  primitives. This is the single biggest "every person" unlock, and honestly a large
+  build. Still speculative until scoped; the skill-text half above is not a step toward
+  this — it solves a different, smaller problem (content portability vs. execution
+  portability).
 
 ---
 
@@ -224,16 +244,30 @@ The layer's soul is not benchmarks — it is **visibility**: the unified event j
 happen" queries, session replay, and a local dashboard the statusline is the seed of.
 Benchmarks then *read* that journal. Build the journal first, the eval harness second.
 
+**Status (2026-08-11):** the journal (guard) existed; `scripts/report.mjs` now reads it
+plus the ledger, graph, and episodic store into one static HTML report — the "local
+dashboard" half, deliberately not a live server (decisions.md D015). Session replay and
+structured "why did that happen" queries beyond grep/`memory_search` remain open.
+
 ### 4.2 `skills` must ship with the vetting gate on
 The 700-skill noise problem (DESIGN.md §4) is the cautionary tale: an ideal harness
 has a *curated* library where every third-party skill passes the vet scanner before
 load. Quality bar, not quantity bar.
 
-### 4.3 Profiles (new, tiny, high-leverage)
-`strict` / `default` / `fast` — named bundles of floor mode + policy tier + explain
-verbosity, selectable per session (`IDEAL_HARNESS_PROFILE=strict`). No new
-enforcement mechanism (anti-overlap: profiles only *select* existing knobs). This is
-the cheapest way to serve the beginner and the expert from one engine.
+**Status:** the vet scanner (`vet_skill`) shipped in v0.1 and every skill added since
+(`session-observer`, `focus`, `grill-with-docs`, `tdd`, `design-critique`) has passed it
+clean. What's still open is the *library* half — a curated, discoverable multi-skill
+catalog (the find-skills-style discovery pattern, DESIGN.md's 2026-08-10 addendum) —
+the gate exists; the thing it gates at scale does not yet.
+
+### 4.3 Profiles — shipped 2026-08-10
+`strict` / `default` / `fast` (`src/guard/profiles.ts`) — named bundles selectable per
+session via `IDEAL_HARNESS_PROFILE`. No new enforcement mechanism (anti-overlap: profiles
+only *select* an existing knob) — today that's `floorMode` alone; the "explain verbosity"
+axis this section originally proposed bundling has no real mechanism behind it yet, so
+profiles honestly don't claim to select it. Precedence: bypass signals > explicit
+`IDEAL_HARNESS_FLOOR_MODE` > profile > soft default; an unrecognized profile name fails to
+`strict`, mirroring `floorMode`'s own rule for a broken `FLOOR_MODE` value.
 
 ---
 
@@ -287,26 +321,59 @@ Perfection here is substantially subtractive. Each refusal protects a property f
 > Shipped since this document was written (2026-07-07, same day): the guard decision journal,
 > the learning loop v1 (`guard learn`, proposals-only), explain-mode denials, the read-only-git
 > default allow, soft-as-default floor mode, and the scout/implementer/reviewer agents.
+>
+> Shipped 2026-08-10 (v2 Phase 1, prompted by a fresh audit against ~26 external repos — see
+> CHANGELOG): the optional tree-sitter structural tier + persisted, incrementally-indexed graph
+> (§3.2), drift-guard's structural tier actually reaching `treesitter` authority and hard-blocking
+> proven-absent symbols (§3.3), verification-first ledger tasks (§3.4 — the item this section
+> itself called the highest-leverage orchestration upgrade), `ideal-harness doctor` (§3.5),
+> profiles (§4.3), and two new skills (`session-observer`, `focus`).
+>
+> Shipped 2026-08-11 (v2 Phase 2, "the flywheel, scale-out, every host, integration-ready" — see
+> CHANGELOG): from v0.2 — audit journal (hash-chained), capability leases, one-shot→rule
+> ratification, explain-mode uniformity on asks too, sandbox auto-apply for `ledger_verify`. From
+> v0.3 — failure memory, decision ledger (`decisions.md`), consolidation/decay, batch ask digest,
+> retro generator. From v0.4 — a git-tracked (not managed/hosted) team policy tier, a consented
+> Obsidian export/import bridge, worktree fan-out, and the `web` module (fetch-scoped, §3.5/§4).
+> From v0.5 — the host shim (skill-text rendering only, not hook portability) and the
+> `design-critique` skill (folded in, not a new module). From v1.0 — a static observe report,
+> provenance (`evidence`) on episodic records, verification gates wired default-on in the
+> reviewer agent, and a re-measured, honestly-labeled benchmark addendum. **Not shipped, and not
+> claimed:** managed/hosted policy (deliberately a file, see decisions.md D014), a live observe
+> dashboard (deliberately static, D015), SQLite-FTS5/vector hybrid memory, LSP/SCIP drift-guard
+> tiers, pluggable `subjectFor` for non-code domains, a skills-library discovery/vetting pipeline,
+> model routing. An **external comparison review** (2026-08-11, recorded in `decisions.md` D021)
+> independently confirmed the harness's anti-goals and identified the decision ledger as the one
+> genuinely high-value gap remaining — closed the same day.
 
 Ordered by leverage-per-effort, respecting DESIGN.md's v0.2 commitments:
 
-| Release | Theme | Contents |
-|---|---|---|
-| **v0.2** | *Trust & visibility* | observe journal (§4.1) + `doctor` (§3.5); guard: audit journal, capability leases, one-shot→rule proposals, explain-mode uniformity, sandbox auto-apply; memory: tree-sitter tier; orchestrate: verification-first tasks; profiles (§4.3) |
-| **v0.3** | *The flywheel* | learning-loop proposals (§5); failure memory + decision ledger; consolidation/decay; batch ask queue; retro generator |
-| **v0.4** | *Scale-out* | managed policy tier; consented memory sharing; parallel fan-out + path-scoped writes; web layer (daemon, extraction, research per DESIGN.md L3) |
-| **v0.5** | *Every host, every domain* | host shim (§3.5); pluggable `subjectFor` + document workspaces (§2 non-coder); skills library with vetting gate; design layer |
-| **v1.0** | *Accountable* | full observe dashboard; provenance contract on all memory; verification gates default-on; published, measured benchmark numbers — the honest-metrics brand as a release criterion |
+| Release | Theme | Contents | Status |
+|---|---|---|---|
+| **v0.2** | *Trust & visibility* | observe journal (§4.1) + `doctor` (§3.5); guard: audit journal, capability leases, one-shot→rule proposals, explain-mode uniformity, sandbox auto-apply; memory: tree-sitter tier; orchestrate: verification-first tasks; profiles (§4.3) | **Shipped** |
+| **v0.3** | *The flywheel* | learning-loop proposals (§5); failure memory + decision ledger; consolidation/decay; batch ask queue; retro generator | **Shipped** |
+| **v0.4** | *Scale-out* | policy tier above user (shipped as a git-tracked team file, not a hosted service); consented memory sharing (Obsidian bridge); parallel fan-out + worktrees; web layer (shipped fetch-scoped; interactive daemon/CDP automation still not built) | **Mostly shipped** — path-scoped write capabilities (blast-radius control per task) not built |
+| **v0.5** | *Every host, every domain* | host shim (shipped, skill-text scope only — hook portability still doesn't travel); pluggable `subjectFor` + document workspaces (§2 non-coder); skills library with vetting gate (discovery pipeline); design layer | **Partially shipped** — non-coder `subjectFor` and a discovery-based skills library remain open |
+| **v1.0** | *Accountable* | observe dashboard (shipped as a static report, not live); provenance contract on memory (shipped: `evidence` field); verification gates default-on (shipped); published, measured benchmark numbers (shipped, addendum) | **Mostly shipped** — "live dashboard" reading is deliberately not pursued (anti-SaaS); the rest holds |
 
 ## 8. Definition of "actually ideal" (testable)
 
 The harness is ideal when every row holds, measurably — not when the feature list is long:
 
-- [ ] Every automatic action is in the journal and explainable in one query.
-- [ ] Every softening (mode, disable, bypass) is loud at decision time *and* auditable later.
-- [ ] Every memory record cites tool-call evidence.
-- [ ] Every "done" task was verified by its own stated check, not by assertion.
-- [ ] Every persona in §2 is served by configuration, with zero forks.
-- [ ] A new user reaches a working, honest floor in one command; an expert tunes it without touching source.
-- [ ] It runs fully offline.
-- [ ] Every published number was measured, and the measurement ships with it.
+- [x] Every automatic action is in the journal and explainable in one query — hash-chained,
+      `verify-journal` detects tampering. Session replay beyond that is still open.
+- [x] Every softening (mode, disable, bypass) is loud at decision time *and* auditable later.
+- [ ] Every memory record cites tool-call evidence — `evidence` is a real field
+      (2026-08-11), stamped when the caller supplies it; not yet mandatory end-to-end.
+- [x] Every "done" task was verified by its own stated check, not by assertion —
+      `ledger_verify`, wired default-on in the reviewer agent.
+- [x] Every persona in §2 is served by configuration, with zero forks — including the
+      team persona now that the team policy tier is shipped (§2).
+- [x] A new user reaches a working, honest floor in one command (`pnpm setup` /
+      `/plugin install`); an expert tunes it without touching source (`ideal-harness.policy.json`,
+      leases, profiles — all data, no source edits).
+- [x] It runs fully offline — the only network calls anywhere are the explicitly
+      policy-gated `web` module's fetches, off by default (WebFetch asks).
+- [x] Every published number was measured, and the measurement ships with it —
+      `BENCHMARK.md`'s 2026-08-11 addendum re-measured on a second, reproducible target
+      and reported one unflattering result plainly alongside the good ones.

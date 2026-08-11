@@ -9,7 +9,7 @@ import { type Severity, THREAT_PATTERNS, type ThreatCategory } from './patterns.
 
 export interface ScanFinding {
   readonly id: string;
-  readonly category: ThreatCategory | 'hidden-characters';
+  readonly category: ThreatCategory | 'hidden-characters' | 'semgrep' | 'osv-advisory';
   readonly severity: Severity;
   readonly evidence: string;
   readonly remediation: string;
@@ -22,7 +22,7 @@ export interface ScanResult {
   readonly ok: boolean;
 }
 
-const SEVERITY_ORDER: Readonly<Record<Severity, number>> = { low: 1, medium: 2, high: 3, critical: 4 };
+export const SEVERITY_ORDER: Readonly<Record<Severity, number>> = { low: 1, medium: 2, high: 3, critical: 4 };
 
 function snippet(text: string, index: number, length: number): string {
   const start = Math.max(0, index - 20);
