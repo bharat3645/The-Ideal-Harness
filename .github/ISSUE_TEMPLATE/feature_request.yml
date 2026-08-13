@@ -1,0 +1,64 @@
+name: Feature or capability proposal
+description: Propose something the harness should be able to do
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before you write: this repo enforces **zero overlap** — each capability has exactly
+        one home. Check `DESIGN.md` §6 and `decisions.md` first. If the capability already
+        exists somewhere, the right move is to extend it, not add a second one.
+
+        Proposals that were considered and rejected are recorded in `decisions.md` with the
+        reasoning. Worth a look before writing — yours may already be answered there.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What can't you do today? Describe the situation, not the solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+      description: Which module would own it, and why that one?
+    validations:
+      required: true
+
+  - type: textarea
+    id: overlap
+    attributes:
+      label: Overlap check
+      description: Which existing capability is closest to this, and why is extending it the wrong answer?
+    validations:
+      required: true
+
+  - type: textarea
+    id: enforcement
+    attributes:
+      label: Does this need to be enforced below the model?
+      description: If it's a safety or scope rule, it belongs in `guard` as deterministic code — not as instructions in a prompt the model can decide to ignore. Say which this is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: measurable
+    attributes:
+      label: How would you measure it?
+      description: This project doesn't claim capabilities it can't measure. What number or test would prove this works?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: contributing
+    attributes:
+      label: Would you want to build it?
+      options:
+        - "Yes, I'd like to take this"
+        - "Maybe, with guidance"
+        - "No, just proposing"
+    validations:
+      required: true
