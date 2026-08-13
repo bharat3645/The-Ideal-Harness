@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: New to open source, or to this codebase?
+    url: https://github.com/bharat3645/The-Ideal-Harness/blob/main/CONTRIBUTING.md
+    about: Start here. There's a walkthrough for your first contribution, and issues labelled "good first issue" are picked to be genuinely doable without knowing the whole system.
+  - name: Why was this designed that way?
+    url: https://github.com/bharat3645/The-Ideal-Harness/blob/main/decisions.md
+    about: Every scope call is recorded with the alternatives considered and what lost. Check here before proposing a change to architecture.
+  - name: Security issue
+    url: https://github.com/bharat3645/The-Ideal-Harness/blob/main/SECURITY.md
+    about: Please do not open a public issue for a vulnerability.
