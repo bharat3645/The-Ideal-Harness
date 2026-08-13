@@ -45,11 +45,17 @@ overrides it, and ~1M is only a last-resort fallback when the host reports no wi
 beats a catch-all ask, unmatched fails closed to ask):
 
 - **Deny:** reading credential files (`.aws`/`.ssh`/`.gnupg`/`.env`/`id_rsa`/`credentials`);
-  Edit/Write to `settings.json`, `.claude-plugin/`, `ideal-harness.policy`, `src/guard/policy/`,
-  `.ideal-harness/leases.json`, or `.ideal-harness/team-policy.json` (self-policy protection —
-  covers both the personal and the shared/git-tracked policy tiers, and the lease grants, not just
-  the default rule file); destructive shell (`rm -rf ~//`, `mkfs`, `dd …of=/dev/`, fork bomb).
+  Edit/Write to `settings.json`, `.claude-plugin/`, `ideal-harness.policy`, **all of `src/guard/`**,
+  **`dist/guard/`** (the compiled code the hooks actually load), **`hooks/hooks.json` and
+  `hooks/*.mjs`** (the hook scripts and the manifest that registers them),
+  `.ideal-harness/leases.json`, `.ideal-harness/team-policy.json`, and
+  `.ideal-harness/guard-journal.jsonl` (self-policy protection — covers the personal and
+  shared/git-tracked policy tiers, the lease grants, the enforcement code in both source and
+  compiled form, the hook registration, and the audit record); destructive shell
+  (`rm -rf ~//`, `mkfs`, `dd …of=/dev/`, fork bomb).
   Matching is path-separator- and case-insensitive, so Windows backslash paths can't slip past.
+  Matching is **lexical**: a symlink pointing at a protected path under a different name is not
+  caught. Stated here rather than left implied.
 - **Ask:** all `Bash`, `Edit`, `Write`, `WebFetch`; `curl`/`wget`/`nc`; `git push`.
 - **Allow:** `Read`, `Glob`, `Grep`, `LS`; read-only git (`git status|log|diff`, anchored — no
   chaining/redirection metacharacters, no credential-path args, no `--output`).
@@ -104,9 +110,23 @@ The policy file itself is covered by the self-policy deny pattern, so the model 
 through the harness — only the human can. A broken file is ignored with a warning (never widens
 the floor); `IDEAL_HARNESS_USER_POLICY=off` is the kill-switch.
 
+> **Tier precedence caveat, stated plainly.** `evaluateTiered` returns on the first tier that
+> matches. An operator-tier **allow** therefore shadows a lower-tier **deny** — including the
+> default floor's credential-read and destructive-shell denies — and does so without the
+> `floor softened` warning, which only fires for the explicit `disable` list. Deny-wins is
+> absolute *within* a tier, not *across* tiers. Worth knowing before adding a broad allow rule
+> to a team policy.
+
 ## Project conventions
 
-- **Stack:** TypeScript (ESM), Node ≥ 20, a single package built with `tsc`, Biome. MCP via `@modelcontextprotocol/sdk`. Tests on `node:test` (zero test-framework deps).
+- **Stack:** TypeScript (ESM), Node ≥ 20, a single package built with `tsc`, Biome. Tests on
+  `node:test` (zero test-framework deps).
+- **Zero runtime dependencies — this is load-bearing.** `package.json` has no `dependencies` key
+  and must not gain one. The MCP stdio server is **hand-rolled** in `src/core/runtime/mcp.ts`
+  (`createMcpServer`), deliberately *not* `@modelcontextprotocol/sdk`. `web-tree-sitter` is a
+  devDependency loaded through a dynamic import inside a try/catch, degrading per-file to the
+  regex tier when absent. Adding a runtime dependency needs a `decisions.md` entry arguing for it
+  and human agreement first — see D007 and D028.
 - **Package manager:** pnpm 10.33.0, pinned via `packageManager`. There is no `pnpm` shim on PATH in this environment — invoke it as **`corepack pnpm …`**.
 - **Build:** `corepack pnpm build` (one `tsc -p tsconfig.json` project: `src/` → `dist/`; the compiler resolves module order).
 - **Test:** `corepack pnpm test` (full suite across the 6 modules; compiles `tsconfig.test.json` → `dist-test/`, then `node --test`).
@@ -114,7 +134,7 @@ the floor); `IDEAL_HARNESS_USER_POLICY=off` is the kill-switch.
 - **Lint/format:** `corepack pnpm biome` / `corepack pnpm biome:fix`.
 - **Layout:** one package at the repo root — `src/{core,guard,compress,memory,orchestrate,web}` compile to `dist/<module>/`; six bins + five MCP servers ship from the single package.
 - **Important paths:** `src/{core,guard,compress,memory,orchestrate,web}`; policy in `src/guard/policy/defaults.ts`; hooks in `hooks/`; agents in `agents/`; dogfood wiring in `.claude/settings.json` (+ statusline in `.claude/settings.local.json`); project docs at the repo root — `README.md`, `DESIGN.md`, `VISION.md`, `CHANGELOG.md`, `decisions.md`, `flow.md`, `BENCHMARK.md`.
-- **Never touch:** `.claude/settings.json`, `.claude-plugin/*`, `src/guard/policy/*` are policy-protected — the floor denies edits to them. If one of them genuinely needs to change (e.g. `.claude-plugin/plugin.json` gaining a new module's MCP server), say so explicitly and let the human make the edit — do not attempt to route around the deny.
+- **Never touch:** `.claude/settings.json`, `.claude-plugin/*`, `src/guard/**`, `dist/guard/**`, and `hooks/*` are policy-protected — the floor denies edits to them. If one of them genuinely needs to change (e.g. `.claude-plugin/plugin.json` gaining a new module's MCP server), say so explicitly and let the human make the edit — do not attempt to route around the deny.
 
 ## Honesty rule
 
