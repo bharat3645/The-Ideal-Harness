@@ -638,3 +638,147 @@ never deleted or edited to look like it always said the new thing.
   `SEVERITY_ORDER` exported), `src/guard/runtime/mcp.ts` (`vet_skill_deep`),
   `src/guard/cli/index.ts` (`vet --deep`), `test/guard/vet-external.test.ts` (new, 9
   tests).
+
+## D030 — Full re-audit (embedding host: GroundWatch) — journal rotation, doc/code drift, Java/Kotlin structural memory
+- **Date:** 2026-08-13
+- **Status:** decided, shipped
+- **Decision:** Run from the embedding host's own working session, not this repo's — a
+  full diligence pass requested to find and close real gaps, not just re-confirm known
+  ones. Ran the actual test/build/lint/validate pipeline first (all green, 329/329, before
+  any change), then fixed four confirmed issues:
+  1. **Guard journal had no rotation** — `.ideal-harness/guard-journal.jsonl` grows one
+     line per tool call, forever, with no cap anywhere in `journal.ts`. Added
+     `JOURNAL_MAX_ENTRIES` (default 5000, `IDEAL_HARNESS_JOURNAL_MAX_ENTRIES` override, `0`
+     disables) — the active file is renamed to `guard-journal.N.jsonl` before the next
+     append once it hits the threshold, never truncated or deleted. Each archive keeps its
+     own hash chain fully verifiable on its own; the fresh active file starts a new chain
+     from genesis, reusing the exact fallback `readLastHash` already had for a missing
+     file — zero new edge case invented, just an existing one reused deliberately. 4 new
+     tests (`test/guard/journal.test.ts`).
+  2. **README documented 5 of 9 skills and 0 of 4 agents** — a first-time reader had no
+     single place to learn `focus`/`grill-with-docs`/`session-observer`/`tdd` or any of
+     `scout`/`plan-critic`/`implementer`/`reviewer` exist. Added a "Skills & agents" section
+     (two tables, one line per skill/agent, sourced from each file's own frontmatter
+     `description` — not paraphrased from memory) between "Tools the agent or host invokes"
+     and the statusline section.
+  3. **`IMPLEMENTATION.md` claimed a `<ideal-harness-qid:>` marker that was never built** —
+     grepped `src/` and `hooks/` for it; zero matches. What actually shipped is
+     `hooks/pretooluse.mjs` emitting Claude Code's native `permissionDecision: 'ask'`
+     contract directly (rule id + operator knobs folded into `permissionDecisionReason`).
+     The capability (deterministic HITL ask-gate) is real and tested; only the specific
+     wire-format description in the doc was stale. Corrected in place rather than deleted,
+     so the historical intent stays legible.
+  4. **Structural memory's tree-sitter tier had no Java or Kotlin grammar** — `Lang` was
+     `typescript | tsx | javascript | python` only. The embedding host (GroundWatch) is
+     majority Java (ten Spring Boot services) plus a Kotlin mobile app; both silently fell
+     back to the regex tier, honestly but coarsely. Added `tree-sitter-java` (ships a
+     prebuilt `tree-sitter-java.wasm`, no build step) and
+     `@tree-sitter-grammars/tree-sitter-kotlin` (same — prebuilt `.wasm`) as
+     devDependencies, extended `GRAMMAR_PACKAGE`/`GRAMMAR_WASM`/`languageForFile`
+     (`.java`, `.kt`, `.kts`), and added `JAVA_DEF_TYPES` (class/interface/enum/record/
+     annotation-type/method/constructor) and `KOTLIN_DEF_TYPES` (class/object/function —
+     Kotlin's grammar cannot distinguish interface-from-class or method-from-function at
+     the node-type level, reported as the coarser kind rather than guessed). Import-edge
+     extraction was deliberately left unbuilt for both languages: Java's
+     `import_declaration` and Kotlin's import node carry the path as untyped child tokens,
+     not a single named field the way JS/Python's import statements do, and reconstructing
+     a dotted path by concatenating them would be exactly the kind of guess this tier
+     exists to avoid — an empty edge list is honest, a wrong one would not be. Verified two
+     ways: 2 new unit tests (`test/memory/treesitter.test.ts`), and live against real
+     GroundWatch source through the actual running `memory` MCP server (not just the test
+     harness) — `add_file` on a real `.java` service file and a real `.kt` mobile file both
+     returned `tier: "treesitter"` with correct symbols, and `query_graph` retrieved both
+     files' symbols together for a single cross-language natural-language query.
+- **Why now, not deferred like the Design & Taste module (D031)**: all four are genuine
+  bugs or gaps with a bounded, mechanical fix — a missing cap, a doc/code mismatch, two
+  missing grammar packages with prebuilt WASM already on the registry. None required
+  inventing a new rule catalog or enforcement surface, which is the line this project
+  already draws (see D031).
+- **What this does NOT do:** it does not backfill structural memory for every previously-
+  indexed file — re-indexing existing entries at the new tier is a `add_file`/rebuild
+  concern for whoever operates the graph, not something this change silently triggers.
+- **Alternatives rejected (journal rotation):** a hard entry-count truncation (delete
+  oldest lines in place) — rejected because it destroys audit history the journal exists
+  to preserve, the opposite of "nothing invisible"; a time-based rotation (daily file) —
+  rejected as needing a clock dependency this module deliberately stays pure of (see the
+  file's own header comment on `ts` being caller-supplied).
+- **Alternatives rejected (Java/Kotlin import edges):** best-effort string-concatenation
+  of untyped children — rejected per the honesty-by-construction principle `drift.ts`
+  already established; a wrong edge is worse than no edge because nothing downstream
+  knows to distrust it.
+- **Home:** `src/guard/journal.ts`, `test/guard/journal.test.ts`, `README.md` ("Skills &
+  agents"), `IMPLEMENTATION.md`, `src/memory/structural/treesitter.ts`,
+  `test/memory/treesitter.test.ts`, `package.json` (2 new devDependencies).
+
+## D031 — Confirmed still-open gaps: Design & Taste module, gstack's `/browse` daemon — not built, on purpose, not silently
+- **Date:** 2026-08-13
+- **Status:** active (informational — records confirmed gaps found during D030's audit, deliberately not closed in the same pass)
+- **Decision:** Two capabilities remain designed-on-paper, never coded, confirmed again
+  during D030's audit rather than just re-read from an old note:
+  1. **Design & Taste (`pbakaus/impeccable` + `emilkowal.ski/skill`)** — `DESIGN.md` rates
+     `impeccable` a **take-whole, spine-level** source ("the only design tool with
+     enforcement below the LLM"), same tier as `headroom`. There is no `detect.mjs`, no
+     design-linting hook, anywhere in `hooks/` or `src/`. `skills/design-critique/SKILL.md`
+     covers part of the *intent* (a pre-emit self-critique pass) but is model-cooperative —
+     a prompt the model can choose to follow — not deterministic code below the model the
+     way `impeccable` was specifically prized for.
+  2. **gstack's `/browse` warm-Chromium daemon** — `DESIGN.md` §R3 already states this
+     honestly: "the single biggest build (gstack's is ~24K LOC)," deferred to v0.2, still
+     not started. `web` remains fetch-only per D012.
+- **Why not built in this pass, unlike D030's four fixes:** both are net-new enforcement
+  surfaces, not bugs. A real design-taste linter needs an actual rule catalog decided by a
+  human (which hex values are banned, what counts as "slop," what the reflex-reject list
+  contains) — that is a judgment exercise, not a mechanical fix, and shipping a rushed
+  placeholder rule set into a security-adjacent hook path would be worse than the honest
+  gap that exists today. A warm-Chromium daemon is a ~24K-LOC subsystem (process
+  lifecycle, CDP protocol, idle shutdown, injection classifier) that no single session
+  should attempt speculatively.
+- **What a real next step looks like, if greenlit:** Design & Taste — start narrow: one
+  deterministic rule (e.g. flag hex colors in `.tsx`/`.css` edits that don't match an
+  existing token file), wired to `PostToolUse` as an `ask` (not a hard block, matching the
+  soft-by-default floor), before adding a second rule. `/browse` — depend on
+  `chrome-devtools-mcp` as an external MCP first (the option `DESIGN.md` itself already
+  names), reimplement the daemon only if that proves insufficient.
+- **Alternatives rejected:** shipping either as a minimal/fake version to close the gap
+  cosmetically — rejected as the opposite of this project's honesty rule; a claimed
+  capability that doesn't hold up is worse than a stated absence.
+- **Home:** this file; `DESIGN.md §3`, §R3 (the sources/estimates being re-confirmed).
+- **Status update (2026-08-13, same day):** the narrow first rule proposed above was
+  greenlit and shipped — see D032. `/browse` remains open.
+
+## D032 — Design & Taste v1: one deterministic rule (hex-color-vs-token-file), not the full module
+- **Date:** 2026-08-13
+- **Status:** decided, shipped
+- **Decision:** New `src/guard/design.ts`: `checkDesignTokens(filePath, content)` flags a
+  hex color literal in a `.tsx`/`.jsx`/`.css`/`.scss`/`.less` file that isn't already
+  present in the project's own design-token file. Off by default —
+  `IDEAL_HARNESS_DESIGN_TOKENS_FILE` (a path to the token source) opts a project in;
+  unset means "not configured," a silent no-op, never a guess at what counts as a
+  violation with nothing to compare against. A missing/unreadable token file fails open
+  the same way. Wired into `hooks/posttooluse.mjs` as an `additionalContext` warning —
+  the same advisory channel the existing secret-redaction/injection warnings already use,
+  since PostToolUse has no permission-decision contract to gate with (the action already
+  happened by the time this hook runs); a finding here is a flag the model reads, not a
+  block. 10 new tests (`test/guard/design.test.ts`), plus live verification against
+  GroundWatch's real `apps/web-console/src/styles/variables.css`: a fabricated `#FF00FF`
+  was correctly flagged, the project's real brand teal `#14736B` was correctly recognized
+  as approved.
+- **Why this rule first, and why deterministic set-membership, not anything fuzzier:**
+  it's mechanical (no taste judgment to encode), it's the exact shape `impeccable`'s own
+  `detect.mjs` was praised for (a plain pattern check, not an LLM opinion), and a design
+  system almost always already has a token file to check against — no new authoring
+  burden on the operator.
+- **What this is NOT, stated plainly:** not the reflex-reject catalog, not the two-altitude
+  slop test, not per-model defect blocks, not `emilkowal.ski`'s animation-review framing —
+  those all still require a human-decided rule set this pass didn't invent one for. This
+  is one rule, not the module DESIGN.md originally scoped.
+- **Alternatives rejected:** hardcoding a "banned colors" list into the harness itself —
+  rejected because taste is project-specific (GroundWatch's teal is another project's
+  clash), and a harness-wide opinion about color would be exactly the guess D031 already
+  rejected; blocking via PreToolUse instead of an advisory — rejected because the file has
+  already been written by the time any check could run PostToolUse, and retrofitting a
+  pre-write content scan into PreToolUse's `Edit`/`Write` path is a larger, riskier change
+  than one narrow rule warrants on its first pass.
+- **Home:** `src/guard/design.ts` (new), `src/guard/index.ts` (exports),
+  `hooks/posttooluse.mjs` (`designLintWarning`), `test/guard/design.test.ts` (new, 10
+  tests).

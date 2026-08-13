@@ -19,6 +19,15 @@ export {
   skipPermissionsActive,
 } from './bypass.js';
 export {
+  type CheckDesignTokensOptions,
+  checkDesignTokens,
+  DESIGN_LINT_EXTENSIONS,
+  DESIGN_TOKENS_FILE_ENV_VAR,
+  type DesignLintResult,
+  extractKnownHexTokens,
+  lintHexColors,
+} from './design.js';
+export {
   ABSENCE_PROOF_FLOOR,
   AUTHORITY_ORDER,
   type Authority,

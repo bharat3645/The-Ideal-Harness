@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { appendFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import {
   appendJournalEntry,
@@ -9,6 +9,7 @@ import {
   chainHash,
   JOURNAL_ENV_VAR,
   JOURNAL_GENESIS_HASH,
+  JOURNAL_MAX_ENTRIES_ENV_VAR,
   JOURNAL_SUBJECT_MAX,
   journalPath,
   parseJournal,
@@ -178,6 +179,98 @@ test('a corrupted trailing line does not block the next append (self-heals to a 
     appendFileSync(journalPath(dir), '{ not valid json\n', 'utf8');
     const e2 = buildJournalEntry({ ts: 't2', tool: 'Bash', subject: 'git log', decision, mode: 'soft' });
     assert.equal(appendJournalEntry(e2, { cwd: dir, env: {} }), true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('rotation: active journal is archived (renamed, not deleted) once it hits the max-entries threshold', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ih-journal-'));
+  try {
+    const env = { [JOURNAL_MAX_ENTRIES_ENV_VAR]: '2' };
+    for (const subject of ['a', 'b', 'c']) {
+      appendJournalEntry(buildJournalEntry({ ts: 't', tool: 'Bash', subject, decision, mode: 'soft' }), {
+        cwd: dir,
+        env,
+      });
+    }
+    const archivePath = journalPath(dir).replace(/\.jsonl$/, '.1.jsonl');
+    assert.ok(existsSync(archivePath), 'the 2-entry file should have been archived before the 3rd append');
+    const archived = parseJournal(readFileSync(archivePath, 'utf8'));
+    assert.equal(archived.length, 2);
+    assert.deepEqual(
+      archived.map((e) => e.subject),
+      ['a', 'b'],
+    );
+
+    const active = parseJournal(readFileSync(journalPath(dir), 'utf8'));
+    assert.equal(active.length, 1, 'the active file should only hold what was written after rotation');
+    assert.equal(active[0]?.subject, 'c');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('rotation: archive keeps its own hash chain fully verifiable, and the post-rotation active file starts a fresh chain from genesis', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ih-journal-'));
+  try {
+    const env = { [JOURNAL_MAX_ENTRIES_ENV_VAR]: '2' };
+    for (const subject of ['a', 'b', 'c']) {
+      appendJournalEntry(buildJournalEntry({ ts: 't', tool: 'Bash', subject, decision, mode: 'soft' }), {
+        cwd: dir,
+        env,
+      });
+    }
+    const archivePath = journalPath(dir).replace(/\.jsonl$/, '.1.jsonl');
+    const archived = parseJournal(readFileSync(archivePath, 'utf8'));
+    assert.equal(verifyJournalChain(archived).ok, true, 'archived chain must still verify on its own');
+
+    const active = parseJournal(readFileSync(journalPath(dir), 'utf8'));
+    assert.equal(
+      active[0]?.prevHash,
+      JOURNAL_GENESIS_HASH,
+      'active file restarts the chain, it does not link back to the archive',
+    );
+    assert.equal(verifyJournalChain(active).ok, true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('rotation: repeated rotations pick increasing archive numbers instead of colliding', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ih-journal-'));
+  try {
+    const env = { [JOURNAL_MAX_ENTRIES_ENV_VAR]: '1' };
+    for (const subject of ['a', 'b', 'c']) {
+      appendJournalEntry(buildJournalEntry({ ts: 't', tool: 'Bash', subject, decision, mode: 'soft' }), {
+        cwd: dir,
+        env,
+      });
+    }
+    const names = readdirSync(dirname(journalPath(dir))).filter(
+      (f) => f.startsWith('guard-journal') && f.endsWith('.jsonl'),
+    );
+    assert.ok(names.includes('guard-journal.1.jsonl'));
+    assert.ok(names.includes('guard-journal.2.jsonl'));
+    assert.ok(names.includes('guard-journal.jsonl'), 'active file still present with the last entry');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('rotation: threshold 0 (or negative) disables rotation — the file grows unbounded as before', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ih-journal-'));
+  try {
+    const env = { [JOURNAL_MAX_ENTRIES_ENV_VAR]: '0' };
+    for (const subject of ['a', 'b', 'c', 'd']) {
+      appendJournalEntry(buildJournalEntry({ ts: 't', tool: 'Bash', subject, decision, mode: 'soft' }), {
+        cwd: dir,
+        env,
+      });
+    }
+    const names = readdirSync(dirname(journalPath(dir)));
+    assert.deepEqual(names, ['guard-journal.jsonl'], 'no archive should be created when rotation is disabled');
+    assert.equal(parseJournal(readFileSync(journalPath(dir), 'utf8')).length, 4);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

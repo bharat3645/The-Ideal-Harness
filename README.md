@@ -105,6 +105,32 @@ These are the rest of the floor and the engines. They are real, deterministic co
 
 On Tier 2 (any MCP host) every item in **both** lists is reachable as the same MCP servers / CLIs; only the automatic hook application above is Claude-Code-specific.
 
+## Skills & agents
+
+Nine skills (`skills/<name>/SKILL.md`, model-invoked by name/description match) and four
+subagents (`agents/<name>.md`, dispatched by `orchestrate`'s subagent-driven-development
+loop). Full detail lives in each file — this is the index a first-time reader needs to
+know they exist and when each one fires.
+
+| Skill | Use when | Does |
+|---|---|---|
+| `grill-with-docs` | Start of any non-trivial task naming a library/framework/API | Interrogates the request for scope/constraints and grounds it against real, current docs (not training-data memory); produces `CONTEXT.md` for brainstorming to consume. |
+| `brainstorming` | Request is non-trivial or under-specified | **HARD GATE** — produces a design and requires explicit approval before any code is written. |
+| `subagent-driven-development` | Any non-trivial build | Controller loop: one fresh-context subagent per ledger task, review each result, loop fixes — keeps the controller's own context lean. |
+| `tdd` | Inside one implementer's work on a single piece of code | Red/green/refactor at the single-change grain — finer than the ledger's task-level `verify.command`. |
+| `design-critique` | Producing or editing anything with a visual/UX surface | Pre-emit self-critique — anti-slop gates, taste dials, design-token contract check — run *before* the work is shown. |
+| `caveman` | Output token volume matters more than prose polish | Terse, high-signal output — drops filler, keeps all technical substance and code verbatim. |
+| `focus` | User wants to act on the answer immediately | Answer-first, numbered, state-restated output shaping. Orthogonal to `caveman` (structure, not token count) — combine freely. |
+| `session-observer` | Continuously, during any non-trivial session | Captures corrections, repeated patterns, and judgment calls as episodic observations for later human-reviewed skill/policy improvement. Never edits policy itself. |
+| `using-ideal-harness` | Automatic — injected at `SessionStart` | Bootstrap skill: what's installed, when to route to which module. |
+
+| Agent | Use when | Does |
+|---|---|---|
+| `scout` | "Where is X" / "what calls Y" / map an area | Read-only locator; returns a compact `file:line` table. Never edits, never suggests fixes. |
+| `plan-critic` | Non-trivial plan, before any implementer runs | Independent second opinion pinned to a different model tier — a genuinely different reasoning trace, not a re-read of the same context. Returns `PASS` or a severity-tagged issue list; read-only. |
+| `implementer` | One ledger task, dispatched fresh-context | Implements exactly that task from a self-contained brief, runs the stated verification, reports faithfully. One per task — never the whole plan. |
+| `reviewer` | Gate after an implementer finishes a task | Judges spec-compliance and quality against the task spec; verifies claims by running them, not by reading the diff alone. Returns `PASS` or a severity-tagged issue list. |
+
 ## Context-budget statusline (Tier 1)
 
 Claude Code's bottom line carries a live context-window meter — `IH <used>/<window> <pct>%` (e.g. `IH 142k/1M 14%`) — showing the tokens spent and the share of the model's **total context window** they occupy. It advises `⚠ consider /compact or /clear` past 14% and `⚠ /compact or /clear for better results` past 17%, with a `· filling fast` flag when a single turn adds a lot. It is **display + advice only**: Claude Code exposes no hook to force `/compact` mid-session, so the harness never auto-compacts. The advisory band is a *soft* quality line — answers degrade as the window fills — **not** the model's hard limit; native auto-compact stays the hard-limit backstop, and `compress`'s tool-result shrinking slows the fill. The window is **not hardcoded** — the hook reads the active model's real window from Claude Code's `context_window.context_window_size` (200k by default, 1M for extended-context models), so the percentage is correct on whatever model you run; `IDEAL_HARNESS_BUDGET_WINDOW` overrides it and ~1M is only a fallback when the host reports no window. The classification is pure, unit-tested logic in `compress`; the statusline hook reads tokens spent + window straight from Claude Code (or falls back to the transcript) and fails open to `IH —`.

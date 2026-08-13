@@ -22,13 +22,15 @@ export interface TieredExtraction extends Extraction {
   readonly tier: ExtractionTier;
 }
 
-type Lang = 'typescript' | 'tsx' | 'javascript' | 'python';
+type Lang = 'typescript' | 'tsx' | 'javascript' | 'python' | 'java' | 'kotlin';
 
 const GRAMMAR_PACKAGE: Readonly<Record<Lang, string>> = {
   typescript: 'tree-sitter-typescript',
   tsx: 'tree-sitter-typescript',
   javascript: 'tree-sitter-javascript',
   python: 'tree-sitter-python',
+  java: 'tree-sitter-java',
+  kotlin: '@tree-sitter-grammars/tree-sitter-kotlin',
 };
 
 const GRAMMAR_WASM: Readonly<Record<Lang, string>> = {
@@ -36,6 +38,8 @@ const GRAMMAR_WASM: Readonly<Record<Lang, string>> = {
   tsx: 'tree-sitter-tsx.wasm',
   javascript: 'tree-sitter-javascript.wasm',
   python: 'tree-sitter-python.wasm',
+  java: 'tree-sitter-java.wasm',
+  kotlin: 'tree-sitter-kotlin.wasm',
 };
 
 /** Node types whose `name` field is a definition site, per language family. */
@@ -50,12 +54,43 @@ const PY_DEF_TYPES: Readonly<Record<string, SymbolKind>> = {
   function_definition: 'function',
   class_definition: 'class',
 };
+/**
+ * Scoped to declarations only (class/interface/enum/record/method/
+ * constructor), matching `PY_DEF_TYPES`'s precedent — no field/local-variable
+ * binding extraction for v1. `enum_declaration`/`record_declaration`/
+ * `annotation_type_declaration` all map to 'class' (closest `SymbolKind` fit;
+ * this codebase doesn't have an enum/record/annotation kind of its own).
+ */
+const JAVA_DEF_TYPES: Readonly<Record<string, SymbolKind>> = {
+  class_declaration: 'class',
+  interface_declaration: 'interface',
+  enum_declaration: 'class',
+  record_declaration: 'class',
+  annotation_type_declaration: 'interface',
+  method_declaration: 'method',
+  constructor_declaration: 'method',
+};
+/**
+ * Kotlin's grammar has one `class_declaration` node for class/interface/
+ * object alike (distinguished by a modifier token, not a node type) and one
+ * `function_declaration` for both top-level functions and class members —
+ * so, unlike Java/JS, this tier cannot distinguish 'interface' or 'method'
+ * from 'class'/'function' here. Reported honestly as the coarser kind rather
+ * than guessed.
+ */
+const KOTLIN_DEF_TYPES: Readonly<Record<string, SymbolKind>> = {
+  class_declaration: 'class',
+  object_declaration: 'class',
+  function_declaration: 'function',
+};
 
 export function languageForFile(file: string): Lang | null {
   if (/\.tsx$/i.test(file)) return 'tsx';
   if (/\.ts$/i.test(file)) return 'typescript';
   if (/\.(mjs|cjs|jsx|js)$/i.test(file)) return 'javascript';
   if (/\.py$/i.test(file)) return 'python';
+  if (/\.java$/i.test(file)) return 'java';
+  if (/\.kts?$/i.test(file)) return 'kotlin';
   return null;
 }
 
@@ -191,6 +226,26 @@ function extractPython(file: string, tree: import('web-tree-sitter').Tree): Extr
 }
 
 /**
+ * Java/Kotlin: symbol extraction only, no import edges. Both grammars'
+ * import nodes carry the imported path as unnamed/untyped children
+ * (`import_declaration` in Java has no `fields` at all; Kotlin's import node
+ * is similarly field-less) rather than the single named field JS/Python's
+ * import statements expose — reconstructing a dotted path would mean
+ * concatenating untyped child tokens, which is exactly the kind of
+ * low-confidence guess this tier exists to avoid. An empty edge list here is
+ * honest; a wrong one would not be.
+ */
+function extractDeclarationsOnly(
+  file: string,
+  tree: import('web-tree-sitter').Tree,
+  defTypes: Readonly<Record<string, SymbolKind>>,
+): Extraction {
+  const nodes: SymbolNode[] = [];
+  walkForSymbols(tree.rootNode, file, defTypes, nodes);
+  return { nodes, edges: [] };
+}
+
+/**
  * Extract symbols for `file`, preferring the tree-sitter tier and degrading
  * to the regex tier for anything unsupported or unavailable. Never throws —
  * every failure mode is a fallback, matching the contract every other tier
@@ -207,7 +262,14 @@ export async function extractSymbolsTiered(file: string, content: string): Promi
         parser.setLanguage(language);
         const tree = parser.parse(content);
         if (tree) {
-          const extraction = lang === 'python' ? extractPython(file, tree) : extractJsFamily(file, tree);
+          const extraction =
+            lang === 'python'
+              ? extractPython(file, tree)
+              : lang === 'java'
+                ? extractDeclarationsOnly(file, tree, JAVA_DEF_TYPES)
+                : lang === 'kotlin'
+                  ? extractDeclarationsOnly(file, tree, KOTLIN_DEF_TYPES)
+                  : extractJsFamily(file, tree);
           tree.delete();
           return { ...extraction, tier: 'treesitter' };
         }

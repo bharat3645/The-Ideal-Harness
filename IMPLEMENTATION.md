@@ -75,7 +75,7 @@ The crown jewel. Everything deterministic, below the LLM.
 - **drift-guard authority ladder** (gsd-core): grep→tree-sitter→(lsp/scip optional) symbol verification; hard-block hallucinated symbols. v0.1 ships grep+tree-sitter tiers.
 - **SkillSpector vetting gate**: scan skills before load. v0.1 = 64-pattern signature DB + homoglyph check + shell-out to OSV for deps + shell-out to semgrep if present (per R2 — do NOT hand-roll taint analysis in v0.1).
 - **Secret redaction** (always-on PreToolUse/PostToolUse hook) + **secrets broker** (scoped short-lived injection).
-- **HITL ask-gate** = 12-factor #7; gstack-style deterministic PreToolUse preference hook (`<ideal-harness-qid:>`).
+- **HITL ask-gate** = 12-factor #7; gstack-style deterministic PreToolUse preference hook. **Shipped differently than planned here**: `<ideal-harness-qid:>` was the original tagging idea for a custom preference-hook wire format; what actually ships is `hooks/pretooluse.mjs` emitting Claude Code's own native `permissionDecision: 'ask'` contract (with the rule id and operator knobs folded into `permissionDecisionReason` instead of a separate tag) — the deterministic-ask capability is real and covered by tests, the literal `qid` marker just never existed in code. Corrected 2026-08-13 after an audit found this doc/code mismatch; see `decisions.md`.
 - Faces: hooks (PreToolUse/PostToolUse/SessionStart) + MCP server (`policy_check`,`vet_skill`,`verify_symbol`,`broker_secret`) + CLI.
 - Tests (heaviest): policy fail-closed matrix, deny-wins, SSRF/egress bypasses (DNS-rebind, redirect, IPv6/decimal), homoglyph detection, redaction, drift-guard hard-block.
 

@@ -1,13 +1,13 @@
 {
   "name": "ideal-harness",
   "version": "0.1.0",
-  "description": "The Ideal Harness: enforcement floor, context compression, memory, orchestration, and web grounding around a stateless model.",
+  "description": "Control plane around a stateless model: guard (deny-wins policy), compress (cache-safe tool_result compression), memory (code-graph + episodic), orchestrate (task ledger + subagent flow), web (SSRF-guarded fetch + live package docs), core (loader/validation/skills).",
   "author": { "name": "Bharat" },
   "mcpServers": {
-    "ideal-harness-guard":       { "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/guard/cli/index.js", "mcp"] },
-    "ideal-harness-compress":    { "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/compress/cli/index.js", "mcp"] },
-    "ideal-harness-memory":      { "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/memory/cli/index.js", "mcp"] },
-    "ideal-harness-orchestrate": { "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/orchestrate/cli/index.js", "mcp"] },
-    "ideal-harness-web":         { "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/web/cli/index.js", "mcp"] }
+    "ideal-harness-guard":       { "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/guard/cli/index.js", "mcp"], "description": "Deny-wins policy floor + skill vetting + drift-guard, below the model" },
+    "ideal-harness-compress":    { "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/compress/cli/index.js", "mcp"], "description": "Deterministic tool_result compression + CCR lossless recovery" },
+    "ideal-harness-memory":      { "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/memory/cli/index.js", "mcp"], "description": "Code-graph structural memory + BM25 episodic recall" },
+    "ideal-harness-orchestrate": { "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/orchestrate/cli/index.js", "mcp"], "description": "Task ledger with real sandboxed verification + worktree fan-out" },
+    "ideal-harness-web":         { "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/web/cli/index.js", "mcp"], "description": "SSRF-guarded fetch + live npm package docs" }
   }
 }

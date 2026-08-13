@@ -22,10 +22,20 @@
  *     the fact — the same tamper-evidence property an audit log needs.
  *     Entries written before this feature shipped have no hash (`undefined`)
  *     and are reported as unverifiable, never as tampered.
+ *   - Rotated, not unbounded: once the active file reaches
+ *     `JOURNAL_MAX_ENTRIES` (default 5000, override via
+ *     `IDEAL_HARNESS_JOURNAL_MAX_ENTRIES`; `0` or negative disables
+ *     rotation), it is renamed to `guard-journal.N.jsonl` before the next
+ *     entry is appended — never truncated or deleted. Each archive keeps its
+ *     own internal hash chain fully verifiable; the fresh active file starts
+ *     a new chain from genesis, the same way a pre-chain/legacy file already
+ *     does (`readLastHash` degrades to genesis whenever the active file is
+ *     missing). A human decides if/when to prune old archives — this module
+ *     never deletes audit history on its own.
  */
 
 import { createHash } from 'node:crypto';
-import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { FloorMode } from './bypass.js';
 import type { PolicyDecision } from './policy/types.js';
@@ -35,6 +45,12 @@ export const JOURNAL_ENV_VAR = 'IDEAL_HARNESS_JOURNAL';
 
 /** Max subject length persisted per entry — enough to learn from, small enough to stay lean. */
 export const JOURNAL_SUBJECT_MAX = 240;
+
+/** Operator override for the rotation threshold; `0` or negative disables rotation. */
+export const JOURNAL_MAX_ENTRIES_ENV_VAR = 'IDEAL_HARNESS_JOURNAL_MAX_ENTRIES';
+
+/** Default rotation threshold (entries) before the active journal is archived. */
+export const JOURNAL_MAX_ENTRIES_DEFAULT = 5000;
 
 export interface GuardJournalEntry {
   /** ISO-8601 timestamp, supplied by the caller (keeps this module pure of clocks). */
@@ -165,6 +181,55 @@ function readLastHash(path: string): string {
   }
 }
 
+/** Count non-empty lines in a file, or 0 if it doesn't exist / can't be read. */
+function countEntries(path: string): number {
+  try {
+    return readFileSync(path, 'utf8')
+      .split('\n')
+      .filter((l) => l.trim() !== '').length;
+  } catch {
+    return 0;
+  }
+}
+
+/** First `guard-journal.N.jsonl` archive name (alongside `path`) that doesn't already exist. */
+function nextArchivePath(path: string): string {
+  const dir = dirname(path);
+  const base = path.slice(dir.length + 1).replace(/\.jsonl$/, '');
+  let n = 1;
+  let candidate = join(dir, `${base}.${n}.jsonl`);
+  while (existsSync(candidate)) {
+    n += 1;
+    candidate = join(dir, `${base}.${n}.jsonl`);
+  }
+  return candidate;
+}
+
+/**
+ * Archive the active journal (rename, never delete/truncate) once it reaches
+ * `maxEntries`. Best-effort: a rename failure just means rotation didn't
+ * happen this call — observability must never block enforcement.
+ */
+function rotateIfNeeded(path: string, maxEntries: number): void {
+  if (maxEntries <= 0 || countEntries(path) < maxEntries) {
+    return;
+  }
+  try {
+    renameSync(path, nextArchivePath(path));
+  } catch {
+    // best-effort — the active file just keeps growing past the threshold this once
+  }
+}
+
+function resolveMaxEntries(env: Record<string, string | undefined>): number {
+  const raw = env[JOURNAL_MAX_ENTRIES_ENV_VAR]?.trim();
+  if (!raw) {
+    return JOURNAL_MAX_ENTRIES_DEFAULT;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : JOURNAL_MAX_ENTRIES_DEFAULT;
+}
+
 /**
  * Append one entry. Returns true when written, false when disabled or on any
  * I/O failure — never throws. Observability must never block enforcement.
@@ -177,6 +242,7 @@ export function appendJournalEntry(entry: GuardJournalEntry, options: AppendOpti
   try {
     const path = journalPath(cwd);
     mkdirSync(dirname(path), { recursive: true });
+    rotateIfNeeded(path, resolveMaxEntries(env));
     const prevHash = readLastHash(path);
     const chained: GuardJournalEntry = { ...entry, prevHash, hash: chainHash(prevHash, entry) };
     appendFileSync(path, `${JSON.stringify(chained)}\n`, 'utf8');
