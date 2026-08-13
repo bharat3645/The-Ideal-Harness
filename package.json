@@ -1,6 +1,6 @@
 {
   "name": "ideal-harness",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "A Claude-Code-native agent harness with an MCP-portable enforcement and tooling core: the substrate (loader, validation, skill templating + multi-host generation), the deny-wins enforcement floor, deterministic context compression, structural + episodic memory, and orchestration — all in one package.",
   "license": "MIT",
