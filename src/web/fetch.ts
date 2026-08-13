@@ -1,15 +1,16 @@
 /**
- * Fetch + extract — a minimal, dependency-free web engine.
+ * Fetch + extract — a minimal, dependency-free web engine for static pages.
  *
- * Scoped down, deliberately, from DESIGN.md's original "browser daemon"
- * ambition: no headless browser, no scraping library, no new dependency —
- * just the runtime's global `fetch` (Node >= 18) and a hand-rolled HTML
- * text extractor. A real browser daemon means a Chromium/Playwright
- * dependency this project's zero-runtime-deps goal (VISION §6.2) refuses,
- * and DESIGN.md's own risk log already flagged it as the single biggest
- * build in the whole roadmap — out of scope for what a static-fetch tool
- * can honestly deliver. This gets the actual leverage (grounding answers in
- * real fetched text instead of stale training data) without that cost.
+ * No headless browser here, no scraping library, no new dependency — just
+ * the runtime's global `fetch` (Node >= 18) and a hand-rolled HTML text
+ * extractor. This module deliberately stays a static fetcher; a real
+ * Chromium session (JS-rendered pages, click/type/screenshot) is
+ * `../browse/` — a separate, opt-in module using the operator's own
+ * already-installed Chrome, not a bundled Chromium/Playwright dependency
+ * this project's zero-runtime-deps goal (VISION §6.2) would otherwise
+ * refuse. This one exists for the cheap, common case (grounding an answer
+ * in real fetched text) without paying `browse`'s process-lifecycle cost
+ * when a static GET is all that's needed.
  *
  * "Adaptive" extraction, honestly scoped: three cheap strategies run in
  * order of expected signal quality, and whichever yields the most text

@@ -5,9 +5,12 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import {
   checkDesignTokens,
+  checkReducedMotion,
+  DESIGN_LINT_ENV_VAR,
   DESIGN_TOKENS_FILE_ENV_VAR,
   extractKnownHexTokens,
   lintHexColors,
+  lintReducedMotion,
 } from '../../src/guard/design.js';
 
 test('extractKnownHexTokens finds every distinct hex literal, normalized lowercase', () => {
@@ -86,4 +89,52 @@ test('checkDesignTokens: an approved color from the real token file passes clean
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('lintReducedMotion: checked=false for a file type it does not cover', () => {
+  const result = lintReducedMotion('a.java', '@keyframes spin { from { transform: rotate(0); } }');
+  assert.equal(result.checked, false);
+  assert.equal(result.flagged, false);
+});
+
+test('lintReducedMotion: no animation introduced -> checked, not flagged', () => {
+  const result = lintReducedMotion('a.css', '.x { color: red; padding: 8px; }');
+  assert.equal(result.checked, true);
+  assert.equal(result.flagged, false);
+});
+
+test('lintReducedMotion: flags a new @keyframes with no reduced-motion accommodation', () => {
+  const result = lintReducedMotion('a.css', '@keyframes spin { from { transform: rotate(0); } }');
+  assert.equal(result.checked, true);
+  assert.equal(result.flagged, true);
+});
+
+test('lintReducedMotion: flags a transition with a duration and no accommodation', () => {
+  const result = lintReducedMotion('Widget.tsx', 'style={{ transition: "opacity 300ms ease" }}');
+  assert.equal(result.checked, true);
+  assert.equal(result.flagged, true);
+});
+
+test('lintReducedMotion: does not flag when prefers-reduced-motion is present in the same edit', () => {
+  const css = `
+    @keyframes spin { from { transform: rotate(0); } }
+    @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+  `;
+  const result = lintReducedMotion('a.css', css);
+  assert.equal(result.checked, true);
+  assert.equal(result.flagged, false);
+});
+
+test('checkReducedMotion: on by default (no env needed, unlike the token check)', () => {
+  const result = checkReducedMotion('a.css', '@keyframes spin { from { transform: rotate(0); } }', { env: {} });
+  assert.equal(result.checked, true);
+  assert.equal(result.flagged, true);
+});
+
+test('checkReducedMotion: kill switch disables it', () => {
+  const result = checkReducedMotion('a.css', '@keyframes spin { from { transform: rotate(0); } }', {
+    env: { [DESIGN_LINT_ENV_VAR]: 'off' },
+  });
+  assert.equal(result.checked, false);
+  assert.equal(result.flagged, false);
 });

@@ -49,4 +49,6 @@ one uninvited.
 This is a self-review pass, not a build gate — there's no CI enforcement here, deliberately: taste
 resists deterministic scoring, and a false-precision linter for it would produce confident-wrong
 verdicts. It also isn't a replacement for testing the actual rendered result in a browser when the
-work is inspectable that way — this catches what looking at code alone can catch.
+work is inspectable that way — this catches what looking at code alone can catch. Motion/animation
+taste is a large enough topic to warrant its own skill rather than sprawling this one — see
+`motion-design` for anything with a transition, animation, or micro-interaction in it.

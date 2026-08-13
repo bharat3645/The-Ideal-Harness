@@ -16,35 +16,42 @@ export interface ExecResult {
 }
 
 /**
- * Kill a spawned command's whole process tree, not just the immediate child.
- * `child.kill()` alone only signals the direct child — with `shell: true` (or
- * a sandboxed `/bin/sh -c` wrapper) that's the shell, not whatever it
- * launched, so a hung real command would keep running past the timeout. On
- * POSIX the child is spawned `detached` so it leads its own process group;
- * signalling `-pid` kills the whole group. On Windows there is no such group,
- * so `taskkill /T` (kill the tree) is the documented equivalent.
+ * Kill a process tree by pid, not just the one process — same tree-kill
+ * contract `killTree` uses for a just-spawned child, but callable with only
+ * a pid, for a process that may have been spawned in a completely different
+ * invocation (e.g. `browse`'s daemon, tracked across calls by pid in a state
+ * file, not by a live `ChildProcess` handle). On POSIX this assumes the
+ * target was spawned `detached` (leads its own process group) the way
+ * `execCommand` and `browse/daemon.ts` both spawn; `-pid` then signals the
+ * whole group. On Windows there is no such group, so `taskkill /T` (kill the
+ * tree) is the documented equivalent.
  */
-function killTree(child: ReturnType<typeof spawn>): void {
-  if (child.pid === undefined) {
-    return;
-  }
+export function killProcessTree(pid: number): void {
   if (process.platform === 'win32') {
     try {
-      spawn('taskkill', ['/pid', String(child.pid), '/T', '/F']);
+      spawn('taskkill', ['/pid', String(pid), '/T', '/F']);
     } catch {
       // best-effort; nothing more we can do
     }
     return;
   }
   try {
-    process.kill(-child.pid, 'SIGKILL');
+    process.kill(-pid, 'SIGKILL');
   } catch {
     try {
-      child.kill('SIGKILL');
+      process.kill(pid, 'SIGKILL');
     } catch {
       // best-effort; nothing more we can do
     }
   }
+}
+
+/** Kill a just-spawned child's whole process tree — see `killProcessTree` for why this exists as a pid-based primitive. */
+function killTree(child: ReturnType<typeof spawn>): void {
+  if (child.pid === undefined) {
+    return;
+  }
+  killProcessTree(child.pid);
 }
 
 /** Run either a sandboxed argv or a raw shell string. Never throws — errors surface as exitCode null. */

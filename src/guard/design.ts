@@ -1,22 +1,33 @@
 /**
- * Design & Taste — v1, deliberately narrow.
+ * Design & Taste — deliberately narrow, two deterministic rules.
  *
  * `DESIGN.md` rates `pbakaus/impeccable` a spine-level source ("the only
  * design tool with enforcement below the LLM") but the full ambition (a
  * reflex-reject catalog, a two-altitude slop test, per-model defect blocks)
  * needs a human-decided rule set before it's anything but a guess. This
- * ships exactly one deterministic rule instead: flag a hex color literal
- * introduced into a UI/style file that isn't already present in the
- * project's own design-token file. No taste judgment, no LLM in the loop —
- * a plain set-membership check, same honesty-by-construction standard as
- * every other tier in this module.
+ * ships exactly two mechanical rules instead of that full catalog — no
+ * taste judgment, no LLM in the loop, same honesty-by-construction standard
+ * as every other tier in this module:
  *
- * Off by default. `IDEAL_HARNESS_DESIGN_TOKENS_FILE` (a path to the
- * project's token source — e.g. a CSS file of `--token: #hex;`
- * declarations) opts a project in; unset means "not configured," and this
- * is a silent no-op — never a guess at what counts as a violation with
- * nothing to compare against. A missing/unreadable token file fails open
- * the same way: observability must never block a tool call.
+ *   1. `checkDesignTokens` — a hex color literal introduced into a UI/style
+ *      file that isn't already present in the project's own design-token
+ *      file. Opt-in via `IDEAL_HARNESS_DESIGN_TOKENS_FILE`: unconfigured
+ *      means "nothing to compare against," a silent no-op, never a guess.
+ *   2. `checkReducedMotion` — a new CSS animation/transition introduced
+ *      without a `prefers-reduced-motion` accommodation in the same edit,
+ *      grounded in `skills/motion-design/SKILL.md`'s "not optional, no
+ *      exceptions" accessibility rule (itself adapted from
+ *      `kylezantos/design-motion-principles`, MIT). On by default (kill
+ *      switch: `IDEAL_HARNESS_DESIGN_LINT=off`) since it needs no operator
+ *      configuration to be meaningful — but stated honestly as a per-edit
+ *      check: it cannot see a global stylesheet's reduced-motion handling
+ *      elsewhere in the project, so its warning says "verify," not
+ *      "violation."
+ *
+ * Everything genuinely taste-based (which lens leads, whether a duration
+ * fits its context) stays in `motion-design`/`design-critique` as
+ * model-cooperative judgment — this file only ever encodes what's actually
+ * checkable by pattern match.
  */
 
 import { readFileSync } from 'node:fs';
@@ -27,7 +38,13 @@ export const DESIGN_LINT_EXTENSIONS = /\.(tsx|jsx|css|scss|less)$/i;
 
 export const DESIGN_TOKENS_FILE_ENV_VAR = 'IDEAL_HARNESS_DESIGN_TOKENS_FILE';
 
+/** Kill switch for `checkReducedMotion` (the only design-lint rule that's on by default). */
+export const DESIGN_LINT_ENV_VAR = 'IDEAL_HARNESS_DESIGN_LINT';
+
 const HEX_COLOR_RE = /#[0-9a-fA-F]{3,8}\b/g;
+
+const ANIMATION_INTRODUCED_RE = /@keyframes\b|animation(-duration)?\s*:|transition(-duration)?\s*:\s*[^;]*\d+m?s/i;
+const REDUCED_MOTION_RE = /prefers-reduced-motion/i;
 
 /** Every distinct hex color literal in a token file's content, normalized lowercase. */
 export function extractKnownHexTokens(tokenFileContent: string): ReadonlySet<string> {
@@ -83,4 +100,42 @@ export function checkDesignTokens(
   } catch {
     return { checked: false, unknownHexColors: [] };
   }
+}
+
+export interface ReducedMotionLintResult {
+  readonly checked: boolean;
+  readonly flagged: boolean;
+}
+
+/**
+ * Pure check: does `content` introduce a new CSS animation/transition
+ * without also including a `prefers-reduced-motion` accommodation in the
+ * same content? A per-edit heuristic, not a project-wide guarantee — see
+ * the module header for why that's a stated limitation, not an oversight.
+ */
+export function lintReducedMotion(filePath: string, content: string): ReducedMotionLintResult {
+  if (!DESIGN_LINT_EXTENSIONS.test(filePath)) {
+    return { checked: false, flagged: false };
+  }
+  if (!ANIMATION_INTRODUCED_RE.test(content)) {
+    return { checked: true, flagged: false };
+  }
+  return { checked: true, flagged: !REDUCED_MOTION_RE.test(content) };
+}
+
+export interface CheckReducedMotionOptions {
+  readonly env?: Record<string, string | undefined>;
+}
+
+/** Hook-facing entry point for `lintReducedMotion`, gated by the `DESIGN_LINT_ENV_VAR` kill switch. */
+export function checkReducedMotion(
+  filePath: string,
+  content: string,
+  options: CheckReducedMotionOptions = {},
+): ReducedMotionLintResult {
+  const { env = process.env } = options;
+  if (env[DESIGN_LINT_ENV_VAR]?.trim().toLowerCase() === 'off') {
+    return { checked: false, flagged: false };
+  }
+  return lintReducedMotion(filePath, content);
 }

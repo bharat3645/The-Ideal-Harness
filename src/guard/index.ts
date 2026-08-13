@@ -20,12 +20,17 @@ export {
 } from './bypass.js';
 export {
   type CheckDesignTokensOptions,
+  type CheckReducedMotionOptions,
   checkDesignTokens,
+  checkReducedMotion,
+  DESIGN_LINT_ENV_VAR,
   DESIGN_LINT_EXTENSIONS,
   DESIGN_TOKENS_FILE_ENV_VAR,
   type DesignLintResult,
   extractKnownHexTokens,
   lintHexColors,
+  lintReducedMotion,
+  type ReducedMotionLintResult,
 } from './design.js';
 export {
   ABSENCE_PROOF_FLOOR,
@@ -39,7 +44,7 @@ export {
   verifySymbol,
   verifySymbolStructural,
 } from './drift.js';
-export { type ExecResult, execCommand } from './exec.js';
+export { type ExecResult, execCommand, killProcessTree } from './exec.js';
 export { looksLikeInjection, type WrapOptions, wrapUntrusted } from './injection.js';
 export {
   type AppendOptions,

@@ -782,3 +782,158 @@ never deleted or edited to look like it always said the new thing.
 - **Home:** `src/guard/design.ts` (new), `src/guard/index.ts` (exports),
   `hooks/posttooluse.mjs` (`designLintWarning`), `test/guard/design.test.ts` (new, 10
   tests).
+- **Status update (2026-08-13, same day):** the human-supplied name list was re-checked
+  against two named design-reference sites and produced real, adoptable content — see
+  D033.
+
+## D033 — Motion design sourced for real: `motion-design` skill + a second deterministic rule
+- **Date:** 2026-08-13
+- **Status:** decided, shipped
+- **Decision:** Two names from the operator's source list needed grounding rather than
+  guessing: "Motion.dev" (confirmed: `motion.dev`, the JS/React/Vue animation library
+  formerly Framer Motion) and a garbled term now confirmed to mean **taste-skill**
+  (`Leonxlnx/taste-skill` — already correctly identified in `DESIGN.md`'s own table, just
+  not connected to the garbled name in D031's audit). Researching Motion.dev's own
+  ecosystem surfaced a third, more directly useful source not previously in this ledger:
+  `kylezantos/design-motion-principles` (MIT, 900+ stars) — a real, complete, two-mode
+  (Create/Audit) Claude skill distilling the *publicly published* work of three named
+  designers (Emil Kowalski, Jakub Krehel, Jhey Tompkins) into a context-weighted framework:
+  a frequency gate, context-dependent duration guidelines, a "best animation is unnoticed"
+  golden rule, and a mandatory `prefers-reduced-motion` rule with no exceptions. This is
+  substantially richer than `DESIGN.md`'s original one-line note on `emilkowal.ski/skill`
+  ("animation-review framing... thin course funnel") — the richer source superseded the
+  thin one for this build, both stay cited.
+  1. **New `skills/motion-design/SKILL.md`** — adapted from `design-motion-principles`
+     (MIT; the three-lens framing is stated, as the source itself states it, as "named in
+     tribute... not authored or endorsed by the designers themselves"). Deliberately
+     condensed to one file matching this harness's own skill convention (the source's
+     multi-file `references/` tree is compressed to what a single-file skill needs, not
+     imported wholesale) — mode detection, the three-lens table + context-to-perspective
+     mapping, the frequency gate, duration guidelines, the golden rule, motion-specific
+     slop patterns, and the mandatory accessibility rule. Cross-linked from
+     `design-critique` (one line, not a merge — motion is a large enough topic to warrant
+     its own file, same reasoning that already separates `focus` from `caveman`).
+  2. **New deterministic rule, `checkReducedMotion`** — flags a new CSS
+     animation/transition introduced without a `prefers-reduced-motion` accommodation in
+     the same edit. Unlike `checkDesignTokens` (D032), this needs no operator-configured
+     reference file to be meaningful, so it's **on by default** (kill switch
+     `IDEAL_HARNESS_DESIGN_LINT=off`) — but its warning text says "verify," not
+     "violation," because it can only see the current edit, not a global stylesheet that
+     might already handle this elsewhere in the project. Verified live against
+     GroundWatch's real `apps/web-console/src/styles/global.css` (which already handles
+     `prefers-reduced-motion` once, correctly) and a synthetic isolated `@keyframes` edit
+     (correctly flagged). 7 new tests.
+- **`taste-skill`'s actual content, now on record** (was under-described in D031/DESIGN.md):
+  three 1-10 dials — `DESIGN_VARIANCE` (layout experimentation), `MOTION_INTENSITY`
+  (animation depth), `VISUAL_DENSITY` (information per viewport) — plus brief-inference to
+  design-system routing and a banned-hex-list anti-slop mechanism. That last piece is
+  independently the same shape as D032's `checkDesignTokens` — convergent validation that
+  the hex-vs-token check was the right first deterministic rule to ship, not a coincidence
+  of choosing it in isolation.
+- **What was explicitly NOT adopted, and why:** Motion.dev's own "AI Kit" (`npx motion-ai`,
+  an MCP + `/motion` skill for saved-transition retrieval, bundled with the paid Motion+
+  tier, ~£299/yr) — not bundled into this harness for the same reason `claude-in-chrome`
+  was skipped in the original `DESIGN.md` table: closed/paid/account-gated, not something
+  this harness's zero-runtime-dependency, offline-capable posture can depend on. An
+  operator who already has Motion+ can still use it alongside the harness; the harness
+  itself doesn't assume or require it.
+- **Still unresolved:** the second named site ("populateui" / "populate UI") does not
+  resolve to any identifiable design tool, component library, or resource under that name
+  or close variants — two separate web searches came back empty. Recorded here rather than
+  silently dropped; needs a URL or a corrected name from the operator before it can be
+  checked against anything.
+- **Alternatives rejected:** merging `motion-design` into `design-critique` — rejected as
+  making an already-focused skill sprawl, the same reasoning `focus`/`caveman` already
+  established for related-but-distinct output concerns; making `checkReducedMotion`
+  opt-in like the token check — rejected because, unlike token-vs-hex (which needs a
+  reference file to mean anything), a reduced-motion check is self-contained and
+  accessibility is the one place this module's own source material states "not optional,
+  no exceptions" rather than "context-dependent."
+- **Home:** `skills/motion-design/SKILL.md` (new), `skills/design-critique/SKILL.md`
+  (cross-link), `src/guard/design.ts` (`lintReducedMotion`, `checkReducedMotion`),
+  `src/guard/index.ts` (exports), `hooks/posttooluse.mjs` (`designLintWarnings`, plural),
+  `test/guard/design.test.ts` (+7 tests, 17 total in the file).
+
+## D034 — `/browse` built: real daemon + CDP client + 6 gated MCP tools, honestly scoped down from gstack's ~24K LOC
+- **Date:** 2026-08-13
+- **Status:** decided, shipped
+- **Decision:** D031 confirmed gstack's `/browse` warm-Chromium daemon as the largest
+  remaining honest gap — "no single session should attempt speculatively." Explicit
+  operator direction ("complete the browse functionality... completely build it") changed
+  that call for this pass, with the scope reduction D031 already named as the sane path:
+  depend on the operator's own Chrome (found, never downloaded/bundled) rather than
+  hand-rolling gstack's full ~24K-LOC subsystem (ONNX/Haiku injection classifier,
+  multi-tab/session management, drag-and-drop all explicitly out of scope, stated plainly,
+  not silently dropped).
+  1. **`src/web/browse/daemon.ts` + `watchdog.ts`** — atomic state (write-then-rename,
+     same contract `journal.ts` already established), `findChromeExecutable`
+     (`CHROME_PATH`/`PUPPETEER_EXECUTABLE_PATH` override, well-known per-platform paths,
+     `existsSync`-checked, never throws), and **real, not lazy-only, idle shutdown**: a
+     small companion watchdog process (Chrome's actual OS parent) polls the shared state
+     file and kills Chrome + itself once idle, with nothing needing to call back in to
+     trigger it — the same gap a call-triggered-only reap would have left open forever if
+     nothing ever called `browse` again.
+  2. **`src/web/browse/cdp.ts`** — a minimal CDP client (request/response only, no generic
+     event bus — `actions.ts` polls `document.readyState` for "did navigation finish"
+     instead) over `ws`, an **optional devDependency** — the exact same "optional engine
+     tier, degrades to a clear error when absent" contract `web-tree-sitter` already
+     established for `memory`. Not Node's native `WebSocket`: that only stabilized in
+     Node 22, and this package's `engines` field is `>=20` — a silent break for Node
+     20/21 users would be worse than one well-established, zero-dependencies-of-its-own
+     package.
+  3. **`src/web/browse/actions.ts`** — `navigate`/`snapshot`/`click`/`typeText`/
+     `screenshot`/`evaluate`. `snapshot` walks the live DOM via `Runtime.evaluate` and
+     tags interactive elements with `data-ih-uid`, rather than rendering the full CDP
+     `Accessibility` domain's AX-tree graph `chrome-devtools-mcp` itself builds — simpler,
+     reliably testable, same practical result. `click`/`typeText` dispatch through the
+     same injected script (real `.click()`, a native-setter `.value` assignment +
+     `input`/`change` events) rather than synthesized `Input.dispatchMouseEvent` — works
+     for ordinary web content, stated as not fooling a listener that specifically
+     requires an OS-level event.
+  4. **6 new MCP tools** (`browse_navigate/snapshot/click/type/screenshot/evaluate`, plus
+     `browse_close`) in `web/runtime/mcp.ts`, gated through a new `gateBrowse` (`gate.ts`)
+     — the literal `WebFetch` policy rule, same as `web_fetch`/`web_docs`, per D018/D019's
+     "any MCP tool doing its own I/O must gate itself like the native tool would." An
+     operator who has denied/asked WebFetch has denied/asked every browse action too, not
+     just the one literally named `web_fetch`.
+- **Two real bugs found and fixed during this build, not shipped silently past them:**
+  - `/json/version`'s `webSocketDebuggerUrl` is the browser-level CDP target — confirmed
+    live that `Page.enable` fails against it ("wasn't found"). Fixed by having the
+    watchdog create one page target via `/json/new` at startup and use *that* target's
+    `webSocketDebuggerUrl` for the whole warm session, not a fresh tab per call.
+  - The watchdog's `writeStateAtomic` never created `.ideal-harness/` before writing,
+    throwing `ENOENT` in any cwd that hadn't used the harness's state folder yet —
+    invisible in manual testing (this repo's own `.ideal-harness/` already exists) and
+    only surfaced once the integration tests ran from fresh temp directories. Found by
+    actually running the test suite, not just the manual smoke test.
+- **Honesty check — what "complete" means here, stated plainly:** verified two ways, not
+  claimed on the strength of unit tests alone. 3 new integration tests run for real
+  against whatever Chrome `findChromeExecutable` finds (skip, not fail, when none is
+  present — matching the `semgrep`/`osv-scanner` presence-detected contract): a full
+  session (spawn → navigate to a real page → snapshot → screenshot → evaluate → click →
+  shutdown), daemon reuse across two `ensureDaemon` calls, and genuine idle self-
+  termination with nothing calling back in. All three passed live, repeatedly, on this
+  machine's real Chrome install — not mocked. 368 tests total (was 345), full
+  check/build/biome/validate clean.
+- **What this explicitly does NOT claim:** feature parity with `chrome-devtools-mcp` or
+  gstack's own daemon (no AX-tree domain, no multi-tab, no drag-and-drop, no injection
+  classifier). A CDP session this simple could theoretically be fooled by a page that
+  specifically detects non-native input events — not a concern this pass tried to close.
+- **Alternatives rejected:** bundling Puppeteer/Playwright (a real Chromium download +
+  hard runtime dependency) — rejected, same VISION §6.2 zero-runtime-deps reasoning
+  `fetch.ts` already states, and unnecessary once the operator's own Chrome is
+  discoverable; hand-rolling the WebSocket protocol frame-by-frame to stay at literally
+  zero devDependencies — rejected as a large amount of fragile, security-sensitive
+  protocol code for zero benefit over one audited, ubiquitous library; depending on
+  `chrome-devtools-mcp` as an external MCP (`DESIGN.md`'s own originally-named first
+  step) — not taken this pass because the direct ask was to build the daemon pattern
+  itself, not wire an external server; still a reasonable alternative for an operator who
+  wants the fuller AX-tree feature set instead.
+- **Home:** `src/web/browse/{daemon,watchdog,cdp,actions,index}.ts` (new),
+  `src/web/gate.ts` (`gateBrowse`), `src/web/index.ts` (re-exports, module doc),
+  `src/web/fetch.ts` (module doc corrected — no longer implies browse is unbuilt),
+  `src/web/runtime/mcp.ts` (6 new tools + `withBrowseSession`), `src/guard/exec.ts`
+  (`killProcessTree` extracted as a pid-based primitive, `killTree` now delegates to it),
+  `src/guard/index.ts` (export), `package.json` (+`ws`, `@types/ws` devDependencies),
+  `test/web/browse/{daemon,integration}.test.ts` (new, 13 tests), `test/web/mcp.test.ts`
+  (+2 tests).
