@@ -1,0 +1,72 @@
+name: Bug report
+description: Something behaves differently from what the docs say
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. The most useful bug reports here are the ones that show a gap
+        between what a doc claims and what the code does — that gap is exactly what this
+        project cares about closing.
+
+  - type: input
+    id: version
+    attributes:
+      label: How are you running it?
+      description: Built from source (commit SHA) or installed from npm (version)? Note that the published npm package is currently stale — see the README's publish-freshness note.
+      placeholder: "built from source @ abc1234"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Tier
+      options:
+        - Tier 1 (Claude Code)
+        - Tier 2 (other MCP host)
+        - CLI only
+        - Library / embedded
+    validations:
+      required: true
+
+  - type: input
+    id: host
+    attributes:
+      label: Host and OS
+      placeholder: "Claude Code on macOS 15.2, Node 22"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: If a doc says it should work a certain way, quote the line and say which file.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened
+      description: Paste real output. Redact anything sensitive yourself — do not rely on the harness to do it in a bug report.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. pnpm build
+        2. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `ideal-harness doctor`
+      description: Optional but very helpful — it checks dist, hooks, all five MCP servers, policy parsing and journal writability in one shot.
+      render: shell
