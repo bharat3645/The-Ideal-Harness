@@ -26,7 +26,9 @@
  *      command runs unsandboxed rather than refusing outright — refusing
  *      would make verification simply not work on a large share of real dev
  *      machines, which defeats the point. This is reported honestly via
- *      `sandboxed: false` and `sandboxNote`, never hidden.
+ *      `sandboxed: false` and `sandboxNote`, never hidden. The same fallback
+ *      applies when the platform's sandbox tool (Linux's `bwrap`) is claimed
+ *      supported but isn't actually installed — see `sandboxToolAvailable`.
  */
 
 import {
@@ -37,6 +39,7 @@ import {
   type Platform,
   type PolicyDecision,
   type PolicyRule,
+  sandboxToolAvailable,
   scrubEnv,
 } from '../guard/index.js';
 import type { TaskVerify } from './ledger.js';
@@ -102,7 +105,7 @@ export async function runVerify(verify: TaskVerify, options: RunVerifyOptions = 
     };
   }
 
-  const sandbox =
+  const builtSandbox =
     platform === 'other'
       ? { ok: false as const, argv: [] as readonly string[], note: 'no OS sandbox available on this platform' }
       : buildSandboxCommand(['/bin/sh', '-c', verify.command], platform, {
@@ -110,6 +113,22 @@ export async function runVerify(verify: TaskVerify, options: RunVerifyOptions = 
           ...(options.writablePaths !== undefined ? { writablePaths: options.writablePaths } : {}),
           ...(options.allowNetwork !== undefined ? { allowNetwork: options.allowNetwork } : {}),
         });
+
+  // buildSandboxCommand() assumes the platform's sandbox tool exists; on
+  // Linux that's bwrap, a separate package that's frequently NOT installed
+  // (e.g. GitHub Actions' ubuntu-latest runners). Spawning through a missing
+  // wrapper fails immediately with ENOENT, which used to surface as a
+  // fabricated exitCode: null instead of ever running the command. Verify
+  // the tool is actually there and fall back to unsandboxed execution
+  // (same as the "no OS sandbox on this platform" path above) when it's not.
+  const sandbox =
+    builtSandbox.ok && !sandboxToolAvailable(builtSandbox.argv[0] as string)
+      ? {
+          ok: false as const,
+          argv: [] as readonly string[],
+          note: `${builtSandbox.argv[0]} not found on PATH; running unsandboxed`,
+        }
+      : builtSandbox;
 
   const result = sandbox.ok
     ? await execCommand(sandbox.argv, null, { cwd, env, timeoutMs })

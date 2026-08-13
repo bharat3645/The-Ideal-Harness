@@ -55,6 +55,28 @@ test('runVerify honors a timeout and reports timedOut', async () => {
   assert.equal(result.ok, false);
 });
 
+// Regression test: buildSandboxCommand() used to be trusted blindly for
+// 'linux', which assumes bwrap is on PATH. bwrap is a separate package that
+// isn't installed on plenty of real Linux boxes (notably GitHub Actions'
+// ubuntu-latest runners) — spawning through the missing wrapper failed with
+// an immediate ENOENT, which execCommand reported as a fabricated
+// exitCode: null instead of ever running the command, breaking `ok`,
+// `exitCode`, `expectMatched`, and `timedOut` alike. Forcing `platform:
+// 'linux'` here exercises that fallback path on every dev machine
+// regardless of the host OS or whether bwrap happens to be installed: with
+// the fix, the command actually runs (sandboxed or not) and reports a real
+// exit code either way.
+test('runVerify actually runs on linux even when the sandbox tool is missing from PATH', async () => {
+  const result = await runVerify(
+    { command: 'node -e "console.log(1)"' },
+    { policyTiers: [[ALLOW_NODE]], platform: 'linux' },
+  );
+  assert.equal(result.ran, true);
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.ok, true);
+  assert.notEqual(result.exitCode, null);
+});
+
 test('runVerify never runs a command that policy denies outright', async () => {
   const DENY_ALL: PolicyRule = { id: 'test-deny-all', action: 'deny', tool: 'Bash' };
   const result = await runVerify({ command: 'node -e "console.log(1)"' }, { policyTiers: [[DENY_ALL]] });

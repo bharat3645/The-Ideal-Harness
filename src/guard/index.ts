@@ -83,7 +83,14 @@ export {
   type ResolveOperatorTiersOptions,
   resolveOperatorTiers,
 } from './resolve.js';
-export { buildSandboxCommand, type Platform, type SandboxCommand, type SandboxOptions, scrubEnv } from './sandbox.js';
+export {
+  buildSandboxCommand,
+  type Platform,
+  type SandboxCommand,
+  type SandboxOptions,
+  sandboxToolAvailable,
+  scrubEnv,
+} from './sandbox.js';
 export { type ScrubResult, scrubToolOutput } from './scrub.js';
 export { type AccessRecord, SecretsBroker } from './secrets.js';
 export * from './vet/index.js';

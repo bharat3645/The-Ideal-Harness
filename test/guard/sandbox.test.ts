@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildSandboxCommand, scrubEnv } from '../../src/guard/sandbox.js';
+import { buildSandboxCommand, sandboxToolAvailable, scrubEnv } from '../../src/guard/sandbox.js';
 
 test('macOS wraps in sandbox-exec with a profile', () => {
   const cmd = buildSandboxCommand(['echo', 'hi'], 'darwin', { workdir: '/repo' });
@@ -25,6 +25,20 @@ test('Linux keeps network when allowed', () => {
 test('unsupported platform fails closed', () => {
   const cmd = buildSandboxCommand(['echo'], 'other', { workdir: '/repo' });
   assert.equal(cmd.ok, false);
+});
+
+// sandboxToolAvailable() checks via `/bin/sh -c 'command -v <bin>'`, so it's
+// only meaningful on POSIX (Windows has neither /bin/sh nor a sandbox tool
+// to look up — verify.ts never reaches this check there, since detectPlatform()
+// maps win32 to 'other', which already fails closed to unsandboxed).
+test('sandboxToolAvailable finds a binary that is actually on PATH', { skip: process.platform === 'win32' }, () => {
+  assert.equal(sandboxToolAvailable('node'), true);
+});
+
+test('sandboxToolAvailable is false for a binary that does not exist anywhere on PATH', {
+  skip: process.platform === 'win32',
+}, () => {
+  assert.equal(sandboxToolAvailable('definitely-not-a-real-binary-xyz'), false);
 });
 
 test('scrubEnv removes secret-looking keys but keeps allowlisted', () => {

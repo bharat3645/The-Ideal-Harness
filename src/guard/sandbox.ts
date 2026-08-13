@@ -7,6 +7,8 @@
  * `ok: false`, and the caller must refuse to run rather than run unsandboxed.
  */
 
+import { spawnSync } from 'node:child_process';
+
 export type Platform = 'darwin' | 'linux' | 'other';
 
 export interface SandboxOptions {
@@ -76,6 +78,23 @@ export function buildSandboxCommand(
     return { ok: true, argv };
   }
   return { ok: false, argv: [...command], note: 'no OS sandbox available on this platform; refuse to run unsandboxed' };
+}
+
+/**
+ * Whether `bin` actually resolves on PATH right now. `buildSandboxCommand`
+ * above is a pure builder: it assumes the sandbox tool for a given platform
+ * exists, which holds for macOS's built-in `sandbox-exec` but is NOT
+ * guaranteed for Linux's `bwrap` — a separate package, absent by default on
+ * plenty of real Linux boxes (e.g. GitHub Actions' `ubuntu-latest` runners
+ * ship without it). Spawning a command through a missing wrapper fails with
+ * an immediate `ENOENT`, which upstream callers must not mistake for the
+ * wrapped command itself having run and produced exit code `null`. Callers
+ * that actually spawn the built command should check this first and fall
+ * back to unsandboxed execution when it's false — see `orchestrate/verify.ts`.
+ */
+export function sandboxToolAvailable(bin: string): boolean {
+  const result = spawnSync('/bin/sh', ['-c', `command -v ${bin}`], { stdio: 'ignore' });
+  return result.status === 0;
 }
 
 const SECRET_ENV_KEY = /(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|PRIVATE|SESSION|API)/i;
