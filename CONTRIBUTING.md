@@ -1,7 +1,12 @@
 # Contributing to The Ideal Harness
 
-Thanks for wanting to make the harness better. A few principles keep this codebase
-coherent — they are not negotiable, because they are the whole point.
+Thanks for wanting to make the harness better.
+
+**Never contributed to an open-source project before?** Start at
+[Your first contribution](#your-first-contribution) further down — it walks the whole
+thing, including the git mechanics. You are not expected to already know how this works.
+
+**Been here before?** The principles below are the short version of what review checks for.
 
 ## Principles
 
@@ -29,6 +34,81 @@ A change is not done until `pnpm build && pnpm check && pnpm test && pnpm biome`
 green, `node dist/core/cli/index.js validate .` passes, and every `SKILL.md` you
 touched passes `node dist/guard/cli/index.js vet <file>`.
 
+> **Build from source, not from npm.** The published `ideal-harness` package is currently
+> behind this repo — see the publish-freshness note in `README.md`. For development, the
+> local checkout is the only path that gets you what the docs describe.
+
+## Your first contribution
+
+### 1. Find something to work on
+
+Issues labelled **`good first issue`** are chosen so you can finish them without
+understanding the whole system. Each one names the files involved and what "done" looks
+like.
+
+Comment on the issue saying you're taking it. That's it — no formal assignment process.
+It stops two people building the same thing.
+
+If an issue is unclear, say so in the issue. An unclear issue is the maintainer's bug, not
+your comprehension problem.
+
+### 2. Get it running
+
+```bash
+# Fork the repo on GitHub (button, top right), then:
+git clone https://github.com/YOUR-USERNAME/The-Ideal-Harness
+cd The-Ideal-Harness
+pnpm install
+pnpm build
+pnpm test          # should be all green before you change anything
+```
+
+If `pnpm test` isn't green on a fresh clone, that's a bug — open an issue.
+
+### 3. Make the change
+
+```bash
+git checkout -b add-go-treesitter    # short, descriptive
+```
+
+Small commits with clear messages. Write the test alongside the code, not after.
+
+### 4. Open the pull request
+
+```bash
+git push origin add-go-treesitter
+```
+
+GitHub will offer a "Compare & pull request" button. The PR template asks what you changed,
+why you chose that approach, and confirms the checks pass. Fill it in honestly — including
+the "anything unflattering" section, which is genuinely wanted and not a trap.
+
+### 5. Review
+
+Expect comments. Review here is about the code, and questions are questions, not
+accusations. If you disagree with a review comment, say so and explain why — that's a
+normal part of the process, not a confrontation.
+
+If you get stuck at any point, comment on the issue. A half-finished PR with a question
+attached is far more useful than silence.
+
+## Finding your way around the codebase
+
+Reading a codebase you didn't write is a skill. This one is documented specifically to make
+it possible:
+
+| Read this | To understand |
+|---|---|
+| `README.md` | What each of the six modules does and what runs automatically |
+| `DESIGN.md` | The 9-layer architecture, and which external ideas were adjudicated in |
+| `decisions.md` | **Why** every scope call was made — alternatives considered and what lost |
+| `flow.md` | The actual runtime sequence for each flow, as diagrams |
+| `VISION.md` | Where this is going, and the anti-goals |
+| `BENCHMARK.md` | What has been measured, and the methodology |
+
+If you're about to ask "why isn't this done the obvious way," check `decisions.md` first —
+the answer is usually there, recorded at the time with the reasoning.
+
 ## Adding a module
 
 Each module lives in `src/<module>/` with a clean public `index.ts`, and exposes up to three
@@ -47,3 +127,18 @@ faces where it makes sense — Claude Code skills/hooks, a standalone MCP server
 ## Commits
 
 Small, focused commits with a clear message. Branch off `main`; open a PR. CI must be green.
+
+## Ways to help that aren't code
+
+All of these are real contributions and all of them are wanted:
+
+- **Run it on a Tier-2 host** (Cursor, Cline, Codex, Gemini) and report what happens. Tier 2
+  is shipped but not systematically exercised — see the open issue.
+- **Try the quickstart on a fresh machine** and note every place it doesn't match reality.
+- **Benchmark it** against a codebase you have, and report the numbers, including bad ones.
+- **Improve the docs** where they assume knowledge they shouldn't.
+- **Argue with `decisions.md`.** If a scope call looks wrong, open an issue and make the case.
+
+## Conduct
+
+See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Short version: argue about code, not people.
