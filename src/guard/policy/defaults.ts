@@ -9,6 +9,36 @@
 
 import type { PolicyRule } from './types.js';
 
+/**
+ * Paths that can widen, disable, or erase the floor. Editing any of these
+ * through the harness is denied, because a model that can rewrite its own
+ * enforcement code is not enforced at all.
+ *
+ * Covers, in order:
+ *  - plugin manifests and host settings files
+ *  - the operator policy file (any location)
+ *  - `src/guard/**` — the whole module, not just `policy/`; `bypass.ts`,
+ *    `redact.ts`, `resolve.ts` and `scrub.ts` all decide enforcement outcomes
+ *  - `dist/guard/**` — the compiled code the hooks actually load at runtime.
+ *    Protecting only the TypeScript source left the executing code writable.
+ *  - `hooks/hooks.json` and `hooks/*.mjs` — the hook scripts and the manifest
+ *    that registers them. Deleting the registration disables the floor as
+ *    effectively as rewriting the policy. Deliberately narrow so a host
+ *    project's own `hooks/` directory (React hooks, etc.) is not caught.
+ *  - `.ideal-harness/leases.json` and `team-policy.json` — elevated grants
+ *  - `.ideal-harness/guard-journal.jsonl` — the hash-chained audit record.
+ *    Tamper-evidence is meaningless if the model can rewrite the evidence.
+ *
+ * NOTE: matching is lexical. A symlink pointing at one of these paths under a
+ * different name is not caught — see the audit note in `decisions.md`.
+ */
+const SELF_POLICY_PATTERN =
+  '\\.claude-plugin/|settings\\.json$|managed-settings|ideal-harness\\.policy|' +
+  '(?:^|/)src/guard/|(?:^|/)dist/guard/|' +
+  '(?:^|/)hooks/(?:hooks\\.json$|[^/]+\\.mjs$)|' +
+  '(?:^|/)\\.ideal-harness/(?:leases|team-policy)\\.json$|' +
+  '(?:^|/)\\.ideal-harness/guard-journal\\.jsonl$';
+
 export const DEFAULT_RULES: readonly PolicyRule[] = [
   // === DENY (absolute) ===
   {
@@ -22,16 +52,14 @@ export const DEFAULT_RULES: readonly PolicyRule[] = [
     id: 'deny-self-policy-write',
     action: 'deny',
     tool: 'Edit',
-    match:
-      '\\.claude-plugin/|settings\\.json$|managed-settings|ideal-harness\\.policy|src/guard/policy/|(?:^|/)\\.ideal-harness/leases\\.json$|(?:^|/)\\.ideal-harness/team-policy\\.json$',
+    match: SELF_POLICY_PATTERN,
     description: 'rewriting the harness policy/settings is denied (self-policy protection)',
   },
   {
     id: 'deny-self-policy-write-w',
     action: 'deny',
     tool: 'Write',
-    match:
-      '\\.claude-plugin/|settings\\.json$|managed-settings|ideal-harness\\.policy|src/guard/policy/|(?:^|/)\\.ideal-harness/leases\\.json$|(?:^|/)\\.ideal-harness/team-policy\\.json$',
+    match: SELF_POLICY_PATTERN,
     description: 'rewriting the harness policy/settings is denied (self-policy protection)',
   },
   {
