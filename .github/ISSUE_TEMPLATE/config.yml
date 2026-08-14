@@ -1,11 +1,20 @@
 blank_issues_enabled: true
 contact_links:
+  - name: Looking for something to work on?
+    url: https://github.com/bharat3645/The-Ideal-Harness/blob/main/ROADMAP.md
+    about: Every open issue ranked by difficulty, with honest effort estimates. Start at the green section — those are self-contained and doable without knowing the whole system. Several need no TypeScript at all.
   - name: New to open source, or to this codebase?
     url: https://github.com/bharat3645/The-Ideal-Harness/blob/main/CONTRIBUTING.md
-    about: Start here. There's a walkthrough for your first contribution, and issues labelled "good first issue" are picked to be genuinely doable without knowing the whole system.
+    about: A full walkthrough of your first contribution — forking, branching, what a useful PR looks like, and what to expect from review.
+  - name: Contributing with an AI agent?
+    url: https://github.com/bharat3645/The-Ideal-Harness/blob/main/AGENTS.md
+    about: Constraints your agent needs to know before it writes code here, and what you as the operator are responsible for.
   - name: Why was this designed that way?
     url: https://github.com/bharat3645/The-Ideal-Harness/blob/main/decisions.md
-    about: Every scope call is recorded with the alternatives considered and what lost. Check here before proposing a change to architecture.
-  - name: Security issue
+    about: Every scope call recorded with the alternatives considered and what lost. Check here before proposing an architectural change — the answer is usually already written down.
+  - name: Question, or not sure where something belongs?
+    url: https://github.com/bharat3645/The-Ideal-Harness/blob/main/SUPPORT.md
+    about: Where to ask what, plus honest expectations on response times.
+  - name: Security vulnerability
     url: https://github.com/bharat3645/The-Ideal-Harness/blob/main/SECURITY.md
-    about: Please do not open a public issue for a vulnerability.
+    about: Please do not open a public issue. This runs on other people's machines.
