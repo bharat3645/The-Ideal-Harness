@@ -1,0 +1,29 @@
+# Funding configuration for The Ideal Harness.
+#
+# EVERYTHING BELOW IS DELIBERATELY COMMENTED OUT.
+#
+# GitHub renders a "Sponsor" button from this file. If it points at a Sponsors
+# profile that has not been created yet, the button leads to a 404 — worse than
+# having no button at all. So this stays inert until the account exists.
+#
+# TO ENABLE (about 5 minutes):
+#   1. Go to https://github.com/sponsors and complete onboarding.
+#      You will need bank details and tax information; approval is usually
+#      same-day to a few days.
+#   2. Uncomment the `github:` line below.
+#   3. The Sponsor button appears on the repo automatically.
+#
+# Worth writing a sponsor tier description that says what funding actually buys.
+# For this project the honest answer is maintainer time: faster review turnaround,
+# roadmap items moved forward, and the security findings in the backlog closed
+# sooner. Vague "support development" tiers convert badly; specific ones don't.
+
+# github: [bharat3645]
+
+# Other platforms, if you ever use them. Ko-fi and Buy Me a Coffee have no
+# onboarding friction and are reasonable if GitHub Sponsors approval is slow.
+#
+# ko_fi: 
+# buy_me_a_coffee: 
+# open_collective: 
+# custom: ["https://bharat3645.vercel.app"]
