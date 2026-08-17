@@ -937,3 +937,72 @@ never deleted or edited to look like it always said the new thing.
   `src/guard/index.ts` (export), `package.json` (+`ws`, `@types/ws` devDependencies),
   `test/web/browse/{daemon,integration}.test.ts` (new, 13 tests), `test/web/mcp.test.ts`
   (+2 tests).
+
+## D036 — DeepSeek Harness / Cordis evaluated and declined as a dependency; sandbox gap tracked, not acted on
+
+- **Date:** 2026-08-18
+- **Status:** active
+- **Decision:** Evaluated DeepSeek Harness (`dsh`, launched 2026-08-13) and its
+  underlying meta-framework Cordis (a separate, MIT-licensed, ~4-year-mature project via
+  Koishi) against this project. Conclusion: do not adopt `@cordisjs/core` as a
+  dependency anywhere in this codebase; do not build a self-modifying agent loop or
+  hot-swappable in-process plugins. Keep the existing fixed, deterministic
+  enforcement-floor architecture as-is.
+- **Why:** Cordis's core differentiator — a reversible, hot-swappable, self-modifiable
+  agent loop — is architecturally opposed to D003 (the floor is deterministic code
+  below the model, never itself swappable at runtime) and D006 (no self-modification,
+  proposals-only). Adopting `@cordisjs/core` as a dependency would also directly violate
+  D007's zero-runtime-dependency property, regardless of which module it landed in or
+  how the rollout was staged. Independent source-level reviews of DeepSeek Harness
+  (grapeot's source analysis, a Wavect security review) found its sandbox covers
+  filesystem only, not network or process visibility — a real, currently-open gap on
+  their side, not a maturity advantage to adopt from. DeepSeek Harness is also
+  explicitly a developer preview (~130k GitHub stars in days, but pre-1.0, with
+  breaking-change churn already observed) — not a basis to destabilize an already-shipped
+  v1.0-equivalent architecture.
+- **What this does NOT mean:** DeepSeek Harness's engineering isn't dismissed —
+  multi-provider routing (Anthropic/OpenAI/DeepSeek) as a pattern, and Cordis's own
+  rollback/dependency-injection discipline as a design *influence* (not a dependency),
+  are both reasonable ideas worth remembering. Neither is being built into this
+  codebase today; if `orchestrate`'s model-routing line (`VISION.md §3.4`, correctly
+  marked speculative and host-dependent per D021) is ever picked up, it should be built
+  the way `plan-critic` (D028) was — using this project's own zero-dependency native
+  mechanisms, not by importing theirs.
+- **Alternatives rejected:** a staged, low-risk pilot adopting `@cordisjs/core` in
+  `core` only before expanding further (this was an earlier draft plan — see the
+  now-superseded GitHub issue #21 comment thread and the stale local planning file
+  referenced there) — rejected on reflection because staging doesn't change that the
+  dependency itself is the anti-goal; a "watch and wait" posture with no plan to ever
+  revisit — rejected in favor of explicitly tracking DeepSeek Harness's sandbox posture
+  (see `V2-EXECUTION-PLAN.md`) so a future session can check whether that gap has closed
+  without re-deriving this whole evaluation from scratch.
+- **Home:** this file; `VISION.md §6.2` (anti-goals), `V2-EXECUTION-PLAN.md`.
+
+## D037 — Ongoing v2 backlog execution recorded in V2-EXECUTION-PLAN.md, not just this ledger
+
+- **Date:** 2026-08-18
+- **Status:** active
+- **Decision:** Introduced `V2-EXECUTION-PLAN.md` as a living status tracker and
+  methodology document for working through `VISION.md`'s per-module "could become"
+  backlog incrementally, session over session, agent over agent. This ledger
+  (`decisions.md`) continues to record the *why* behind each shipped item, one
+  append-only entry per decision (per D020); the new file records the *what's left* and
+  *how to pick the next item up* — a related but different concern, and one that
+  changes shape over time in a way an ADR ledger deliberately does not.
+- **Why:** A differently-contexted session — a human working in a local IDE tomorrow
+  with none of this session's conversation history, or a fresh agent spawned without
+  it — needs a single, discoverable place to recover the reasoning behind the current
+  sprint (why WebFetch egress-allowlist shipped first, why Cordis was declined per D036,
+  what's queued next and in what order) without re-deriving any of it. This is the same
+  durability argument `decisions.md`'s own intro and `VISION.md §3.2` already make for
+  ADR-style records, applied to a rolling execution plan instead of a settled decision.
+- **Alternatives rejected:** folding this into `ROADMAP.md` — rejected; `ROADMAP.md` is
+  explicitly the community-facing issue-tracker summary (issues #1–#20, ranked for
+  outside contributors), and conflating the maintainer's own internal execution plan
+  with that community-facing document would blur an intentionally separate audience.
+  Folding it into `decisions.md` itself as one large, continuously-edited entry —
+  rejected; a living, mutable status tracker does not fit this ledger's append-only,
+  never-edited-after-the-fact convention (stated explicitly in this file's own format
+  section), and forcing it in would corrupt that convention for every future entry.
+- **Home:** `V2-EXECUTION-PLAN.md` (new), `CLAUDE.md` (pointer added under a new
+  "Continuing the v2 backlog" section).
