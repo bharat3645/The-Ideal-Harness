@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Cross-turn dedup for `compress` — closes VISION.md §3.1's "could become" line (2026-08-18)
+
+Same file read twice, same command rerun — the second occurrence now becomes a pointer
+to the first instead of being re-emitted. Built as a second caller of the existing CCR
+(Compress-Cache-Retrieve) mechanism, not a new store or marker syntax — see `decisions.md`
+D039. `src/compress/ccr.ts` gains `CcrStore.peekMarker` (lookup-only, exact-hash-match) and
+an exported `hashContent`; `src/compress/detect.ts`'s `compressToolResult` gains an opt-in
+`dedupe` option, gated by the same "only if the pointer is actually cheaper" rule the
+compression token gate already enforces. Session-scoped by construction (one `CcrStore`
+per MCP server process) — two sessions never dedup against each other, and near-but-not-
+exact content is never deduped (exact-hash-match only, no fuzzy/similarity matching).
+`compress_tool_result`'s MCP handler now passes `dedupe: true`, so this is wired end-to-end.
+12 new tests (`test/compress/dedup.test.ts`). 382 tests total (was 370). Full
+check/build/biome/validate clean.
+
 ### v2 Phase 2 addendum 3 — closes D027's last two gaps: autoplan, OSV/semgrep (2026-08-11, same day)
 
 Prompted by "use the remaining ones as well... after filling all the gaps perfectly push
