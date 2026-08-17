@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Egress domain allowlist — WebFetch joins the learn/ratify loop (2026-08-18)
+
+Closes the `VISION.md` §3.3 "could become" gap: WebFetch asks could never be ratified into
+a standing allow rule the way repeated Bash approvals could — every fetch required manual
+approval forever. `guard learn`/`guard ratify` now support WebFetch, scoped to the
+*origin* (scheme+host+port), never the full URL. Full writeup: `decisions.md` D035.
+
+- New `webFetchOriginShape` in `src/guard/learn.ts`; `proposeAllowRules`/`ratifyShape`
+  branch on tool (Bash → command shape, WebFetch → origin, anything else → unchanged,
+  still never learned from).
+- Proposed WebFetch rules anchor to the origin with a path/query/end-of-string boundary,
+  so `example.com`'s rule can never match a suffix-domain attack like
+  `example.com.evil.com` — tested explicitly.
+- `ideal-harness-guard ratify <shape>` CLI is unchanged — a URL-shaped argument
+  auto-detects as a WebFetch origin, no new flag.
+- 377 tests total (was 370; +7, 0 regressions). `check`/`build`/`biome`/`validate` all
+  clean.
+
 ### v2 Phase 2 addendum 3 — closes D027's last two gaps: autoplan, OSV/semgrep (2026-08-11, same day)
 
 Prompted by "use the remaining ones as well... after filling all the gaps perfectly push
