@@ -6,6 +6,15 @@
  * already-compressed content (carrying a CCR marker) is left untouched. With a
  * CcrStore it stashes the original and appends a retrieval marker, making the
  * lossy step lossless end-to-end.
+ *
+ * Cross-turn dedup (`dedupe` option) reuses that same CcrStore and the same
+ * `<<ccr:HASH>>` marker/retrieval path — see decisions.md D039. It is a second
+ * caller of one mechanism, not a second mechanism: exact content seen earlier
+ * in the store's lifetime becomes a pointer to the first occurrence instead of
+ * being re-emitted (or re-analyzed by the compression tactics below) a second
+ * time. Exact-hash-match only, never fuzzy/similarity-based, and gated by the
+ * same "only if the pointer is actually cheaper" rule the token gate already
+ * enforces for compression.
  */
 
 import type { CcrStore } from './ccr.js';
@@ -15,7 +24,7 @@ import { compressJsonArray } from './compressors/json.js';
 import { compressLog } from './compressors/log.js';
 import { estimateTokens } from './tokens.js';
 
-export type CompressionMethod = 'none' | 'json-array' | 'log-rle' | 'stack-trace';
+export type CompressionMethod = 'none' | 'json-array' | 'log-rle' | 'stack-trace' | 'dedup';
 
 export interface CompressionResult {
   readonly text: string;
@@ -33,6 +42,15 @@ export interface CompressOptions {
   readonly store?: CcrStore;
   /** When true and a store is provided, stash the original and append a retrieval marker. */
   readonly recoverable?: boolean;
+  /**
+   * When true and a store is provided, exact-identical content seen earlier in
+   * the store's lifetime becomes a pointer to the first occurrence instead of
+   * being re-emitted. Session-scoped: the store's own lifetime is the dedup
+   * scope, so two sessions (two CcrStore instances) never dedup against each
+   * other. Exact-hash-match only — near-but-not-identical content is never
+   * deduped.
+   */
+  readonly dedupe?: boolean;
 }
 
 function bestCandidate(content: string): { text: string; method: CompressionMethod } | null {
@@ -67,7 +85,7 @@ function noop(content: string): CompressionResult {
   return { text: content, method: 'none', originalTokens: tokens, compressedTokens: tokens, saved: 0 };
 }
 
-/** Compress a single tool result. Idempotent, token-gated, optionally recoverable via CCR. */
+/** Compress a single tool result. Idempotent, token-gated, optionally recoverable via CCR and/or cross-turn deduped. */
 export function compressToolResult(content: string, options: CompressOptions = {}): CompressionResult {
   const originalTokens = estimateTokens(content);
 
@@ -76,8 +94,41 @@ export function compressToolResult(content: string, options: CompressOptions = {
     return noop(content);
   }
 
+  const dedupeEnabled = options.dedupe === true && options.store !== undefined;
+
+  // Cross-turn dedup: if this exact content was already stashed earlier in this
+  // store's lifetime, point at the first occurrence instead of re-analyzing or
+  // re-emitting it. Only worth it when the pointer is actually cheaper than the
+  // content it replaces — the same "never return something that didn't shrink"
+  // rule the compression token gate below already applies.
+  if (dedupeEnabled) {
+    const existing = (options.store as CcrStore).peekMarker(content);
+    if (existing !== undefined) {
+      const markerTokens = estimateTokens(existing);
+      if (markerTokens < originalTokens) {
+        return {
+          text: existing,
+          method: 'dedup',
+          originalTokens,
+          compressedTokens: markerTokens,
+          saved: originalTokens - markerTokens,
+          marker: existing,
+          markerTokens,
+        };
+      }
+      // Pointer isn't actually cheaper (tiny content) — not worth deduping,
+      // fall through to the normal compression path below.
+    }
+  }
+
   const candidate = bestCandidate(content);
   if (candidate === null) {
+    // Nothing to compress. Still memoize for future cross-turn dedup so a later
+    // exact repeat of this content can point back here; the first occurrence
+    // itself passes through unchanged.
+    if (dedupeEnabled) {
+      (options.store as CcrStore).stash(content);
+    }
     return noop(content);
   }
 
@@ -89,6 +140,9 @@ export function compressToolResult(content: string, options: CompressOptions = {
   const gatedTokens = estimateTokens(candidate.text + markerPreview);
   // Token gate: only accept a real shrink (marker included).
   if (gatedTokens >= originalTokens) {
+    if (dedupeEnabled) {
+      (options.store as CcrStore).stash(content);
+    }
     return noop(content);
   }
 
@@ -100,6 +154,11 @@ export function compressToolResult(content: string, options: CompressOptions = {
     marker = (options.store as CcrStore).stash(content);
     text = `${text}\n${marker}`;
     markerTokens = estimateTokens(`\n${marker}`);
+  } else if (dedupeEnabled) {
+    // Not recoverable, but still memoize the raw original (not the compressed
+    // text) under the same hash so a later exact repeat of this content can be
+    // deduped — the first occurrence's own output is unaffected.
+    (options.store as CcrStore).stash(content);
   }
 
   const compressedTokens = estimateTokens(text);
