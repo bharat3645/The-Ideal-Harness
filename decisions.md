@@ -937,3 +937,61 @@ never deleted or edited to look like it always said the new thing.
   `src/guard/index.ts` (export), `package.json` (+`ws`, `@types/ws` devDependencies),
   `test/web/browse/{daemon,integration}.test.ts` (new, 13 tests), `test/web/mcp.test.ts`
   (+2 tests).
+
+## D035 — Egress domain allowlist: WebFetch joins the learning/ratification loop, scoped to origin
+
+`VISION.md` §3.3 listed this under `guard`'s "could become": *"Egress domain allowlist.
+First-use prompt per domain, remembered thereafter — Anthropic-checklist alignment,
+straightforward with the existing tier machinery."* It was correct that the machinery
+already existed — `learn.ts`'s `proposeAllowRules`/`ratifyShape` — but that machinery was
+hardcoded to `Bash` only (`test/guard/learn.test.ts` had an explicit test asserting
+non-Bash tools are never learned from). WebFetch asks were visible in `summarizeAsks`'
+digest but had no path from "asked repeatedly" to "remembered" — every fetch required
+approval forever, with no ratification route, unlike every Bash command shape.
+
+**What shipped:** `webFetchOriginShape(subject)` — reduces a URL to `scheme//host[:port]`
+via the native `URL` constructor (zero dependency), discarding path/query/fragment.
+Learning happens at the *origin*, never the full URL: approving one fetch to
+`https://docs.example.com/a` is not evidence `https://docs.example.com/b` is safe, let
+alone a different domain. `proposeAllowRules` and `ratifyShape` now branch on
+`entry.tool` (`Bash` → `commandShape`, `WebFetch` → `webFetchOriginShape`, anything else →
+still never learned from — Edit/Write stay ask-only, unchanged). Poisoning (a shape that
+ever hit a deny or softened deny is never proposed) now tracks `${tool}:${shape}` composite
+keys so a Bash shape and a WebFetch origin that happen to share a string can never bleed
+into each other's evidence.
+
+**The one real security question this raises, answered directly:** could a proposed
+WebFetch rule for `example.com` accidentally match `example.com.evil.com`? No — the
+generated rule anchors with `^${escapeRegex(origin)}(?=[/?#]|$)`, a lookahead requiring a
+path/query/fragment boundary or end-of-string immediately after the origin. A suffix
+domain fails the lookahead and falls through to `ask`, same as today. Tested explicitly
+(`the proposed WebFetch rule anchors to the origin and rejects a suffix-domain attack`).
+
+**`ratifyShape`'s CLI contract is unchanged, deliberately.** `ideal-harness-guard ratify
+<shape>` already joins all trailing args into one string with no tool flag. Rather than
+add a second CLI argument, `ratifyShape` auto-detects: a `shape` that round-trips through
+`webFetchOriginShape` unchanged is treated as a WebFetch origin, everything else as a Bash
+shape. `ideal-harness-guard ratify "https://docs.example.com"` and
+`ideal-harness-guard ratify "npm test"` both work with the exact same command shape
+operators already know.
+
+**Alternatives rejected:**
+- A *new*, WebFetch-specific mechanism (separate store, separate CLI verb) — rejected;
+  `VISION.md`'s own framing ("straightforward with the existing tier machinery") was the
+  right call, and a second parallel mechanism for the same shape (ask repeatedly → ratify
+  → standing allow rule) would be exactly the kind of overlap `DESIGN.md` §6 rules out.
+- Learning at the full-URL grain instead of origin — rejected; a URL's path is
+  request-specific, not evidence about the domain, and a full-URL rule would silently
+  fail to generalize to the next page on the same trusted site, defeating the point.
+- Extending this to `WebSearch` too — not done. `WebSearch` subjects are query strings,
+  not URLs; `webFetchOriginShape` on a search query simply returns `''` (no shape, never
+  learned from) today, which is correct behavior, not a gap — a search query has no
+  stable "origin" to generalize to.
+
+**Home:** `src/guard/learn.ts` (`webFetchOriginShape`, `shapeFor`, `buildRule`,
+`proposeAllowRules`, `ratifyShape` — all modified; CLI in `src/guard/cli/index.ts`
+untouched, no signature change needed), `test/guard/learn.test.ts` (+7 tests).
+
+**Honesty check:** 377 tests total (was 370; +7, 0 regressions) — measured before and
+after on this checkout, not asserted. `tsc --noEmit`, `biome check`, and
+`node dist/core/cli/index.js validate` all clean.
