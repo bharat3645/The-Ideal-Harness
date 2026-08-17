@@ -1,6 +1,10 @@
 /**
  * Compress MCP face. The server holds a single CcrStore for its lifetime so
  * `compress_tool_result` can stash originals that `ccr_retrieve` later pulls back.
+ * The same store's lifetime is also the cross-turn dedup scope (decisions.md D039):
+ * an exact-repeat tool result within one session's server process becomes a
+ * pointer, and a fresh process (a new session) starts with an empty store, so
+ * dedup never crosses sessions.
  */
 
 import { asString, createMcpServer, HARNESS_VERSION, type McpTool } from '../../core/index.js';
@@ -12,14 +16,14 @@ export function buildCompressTools(store: CcrStore): McpTool[] {
     {
       name: 'compress_tool_result',
       description:
-        'Deterministically compress a tool result (JSON/log/stack). Cache-safe and idempotent; stashes the original so it stays recoverable via ccr_retrieve.',
+        'Deterministically compress a tool result (JSON/log/stack). Cache-safe and idempotent; stashes the original so it stays recoverable via ccr_retrieve. An exact repeat of earlier content in this session becomes a pointer to the first occurrence instead of being re-emitted.',
       inputSchema: {
         type: 'object',
         properties: { content: { type: 'string' } },
         required: ['content'],
       },
       handler: (args) => {
-        const result = compressToolResult(asString(args, 'content', ''), { store, recoverable: true });
+        const result = compressToolResult(asString(args, 'content', ''), { store, recoverable: true, dedupe: true });
         return { text: JSON.stringify(result) };
       },
     },
