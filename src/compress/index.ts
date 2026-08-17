@@ -21,7 +21,7 @@ export {
   resolveWindow,
   WARN_RATIO,
 } from './budget.js';
-export { CCR_MARKER, CcrStore, isCompressed } from './ccr.js';
+export { CCR_MARKER, CcrStore, hashContent, isCompressed } from './ccr.js';
 export { compressStackTrace, type ErrorCompression } from './compressors/errors.js';
 export { compressJsonArray, type JsonCompression } from './compressors/json.js';
 export { compressLog, type LogCompression } from './compressors/log.js';
