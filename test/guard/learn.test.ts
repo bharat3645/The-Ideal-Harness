@@ -8,6 +8,7 @@ import {
   proposeAllowRules,
   ratifyShape,
   summarizeAsks,
+  webFetchOriginShape,
 } from '../../src/guard/learn.js';
 import { evaluate } from '../../src/guard/policy/engine.js';
 
@@ -126,4 +127,80 @@ test('formatAskDigest renders counts; empty case is explicit', () => {
   const text = formatAskDigest(digest);
   assert.match(text, /2x/);
   assert.match(text, /npm test/);
+});
+
+function askWeb(subject: string, overrides: Partial<GuardJournalEntry> = {}): GuardJournalEntry {
+  return { ts: 't', tool: 'WebFetch', subject, action: 'ask', ruleId: 'ask-webfetch', mode: 'soft', ...overrides };
+}
+
+test('webFetchOriginShape reduces a URL to scheme+host, dropping path/query/fragment', () => {
+  assert.equal(webFetchOriginShape('https://docs.example.com/a/b?c=1#d'), 'https://docs.example.com');
+  assert.equal(webFetchOriginShape('https://example.com:8443/x'), 'https://example.com:8443');
+  assert.equal(webFetchOriginShape('not a url'), '');
+  assert.equal(webFetchOriginShape(''), '');
+});
+
+test('repeated WebFetch asks to one origin produce a proposal at the threshold', () => {
+  const entries = [
+    askWeb('https://docs.example.com/a'),
+    askWeb('https://docs.example.com/b?x=1'),
+    askWeb('https://docs.example.com/'),
+  ];
+  const proposals = proposeAllowRules(entries, 3);
+  assert.equal(proposals.length, 1);
+  const p = proposals[0];
+  assert.equal(p?.shape, 'https://docs.example.com');
+  assert.equal(p?.count, 3);
+  assert.equal(p?.rule.action, 'allow');
+  assert.equal(p?.rule.tool, 'WebFetch');
+  assert.equal(p?.rule.id, 'u-allow-web-https-docs-example-com');
+});
+
+test('a WebFetch origin that ever hit a deny is poisoned — never proposed', () => {
+  const entries = [
+    askWeb('https://evil.example/a'),
+    askWeb('https://evil.example/b'),
+    askWeb('https://evil.example/c'),
+    { ...askWeb('https://evil.example/d'), action: 'deny' as const, ruleId: 'deny-x' },
+  ];
+  assert.equal(proposeAllowRules(entries, 3).length, 0);
+});
+
+test('Bash and WebFetch shapes are tracked independently — no cross-tool bleed', () => {
+  const entries = [
+    ask('git fetch'),
+    ask('git fetch'),
+    ask('git fetch'),
+    askWeb('https://git.example/a'),
+    askWeb('https://git.example/b'),
+  ];
+  const proposals = proposeAllowRules(entries, 3);
+  assert.equal(proposals.length, 1);
+  assert.equal(proposals[0]?.rule.tool, 'Bash');
+});
+
+test('the proposed WebFetch rule anchors to the origin and rejects a suffix-domain attack', () => {
+  const entries = [askWeb('https://example.com/a'), askWeb('https://example.com/b'), askWeb('https://example.com/c')];
+  const rule = proposeAllowRules(entries, 3)[0]?.rule;
+  assert.ok(rule);
+  assert.equal(evaluate({ tool: 'WebFetch', input: { url: 'https://example.com/anything' } }, [rule]).action, 'allow');
+  assert.equal(evaluate({ tool: 'WebFetch', input: { url: 'https://example.com' } }, [rule]).action, 'allow');
+  assert.equal(evaluate({ tool: 'WebFetch', input: { url: 'https://example.com.evil.com/a' } }, [rule]).action, 'ask');
+  assert.equal(evaluate({ tool: 'WebFetch', input: { url: 'http://example.com/a' } }, [rule]).action, 'ask');
+});
+
+test('ratifyShape auto-detects WebFetch from a URL-shaped argument, no separate tool param needed', () => {
+  const entries = [askWeb('https://docs.example.com/one-page')];
+  const proposal = ratifyShape(entries, 'https://docs.example.com');
+  assert.ok(proposal);
+  assert.equal(proposal?.rule.tool, 'WebFetch');
+  assert.equal(proposal?.count, 1);
+});
+
+test('ratifyShape for a WebFetch origin refuses one that ever hit a deny', () => {
+  const entries = [
+    askWeb('https://x.example/a'),
+    { ...askWeb('https://x.example/b'), action: 'deny' as const, ruleId: 'deny-x' },
+  ];
+  assert.equal(ratifyShape(entries, 'https://x.example'), null);
 });
