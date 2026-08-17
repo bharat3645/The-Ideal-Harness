@@ -3,22 +3,32 @@
  *
  *   observe (journal) → analyze (patterns) → PROPOSE (diffs) → human ratifies
  *
- * `proposeAllowRules` reads the guard journal and finds Bash command shapes
- * the human keeps approving (repeated `ask` outcomes). For each it drafts a
- * narrow, anchored allow rule the operator can paste into
- * `ideal-harness.policy.json` — BY HAND. Nothing here writes policy: the
+ * `proposeAllowRules` reads the guard journal and finds two kinds of shape
+ * the human keeps approving:
+ *   - Bash command shapes (repeated `ask` outcomes on the same leading tokens)
+ *   - WebFetch origins (repeated `ask` outcomes fetching the same domain) —
+ *     VISION.md §3.3's "egress domain allowlist": first-use prompt per
+ *     domain, remembered thereafter, built on this same ratification
+ *     machinery rather than a new mechanism.
+ *
+ * For each it drafts a narrow, anchored allow rule the operator can paste
+ * into `ideal-harness.policy.json` — BY HAND. Nothing here writes policy: the
  * policy file is covered by the self-policy deny, and the learning loop keeps
  * the same asymmetry as the floor itself (proposals learn; the human stays
  * sovereign; the floor never learns on its own).
  *
  * Conservatism rules, encoded not implied:
- *   - Bash-only in v1. File mutations (Edit/Write) stay ask — approving an
- *     edit twice is not evidence the *next* edit is safe.
+ *   - Bash and WebFetch only. File mutations (Edit/Write) stay ask —
+ *     approving an edit twice is not evidence the *next* edit is safe, and
+ *     the same reasoning applies to a URL path, which is why WebFetch
+ *     proposals are scoped to the *origin*, never the full URL.
  *   - A shape that EVER produced a deny or a softened deny is never proposed;
  *     near-misses are the opposite of evidence.
- *   - Proposed matches are anchored to the observed command's leading tokens
- *     and reject chaining/redirection metacharacters, mirroring the built-in
- *     `allow-git-readonly` pattern.
+ *   - Proposed Bash matches are anchored to the observed command's leading
+ *     tokens and reject chaining/redirection metacharacters, mirroring the
+ *     built-in `allow-git-readonly` pattern. Proposed WebFetch matches are
+ *     anchored to the exact origin with a path/query/end boundary, so
+ *     `https://example.com` can never match `https://example.com.evil.com`.
  */
 
 import { readFileSync } from 'node:fs';
@@ -29,11 +39,11 @@ import type { PolicyRule } from './policy/types.js';
 /** Asks of the same shape required before a proposal is drafted. */
 export const DEFAULT_MIN_COUNT = 3;
 
-/** Tail appended to every proposed match: args allowed, metacharacters rejected. */
+/** Tail appended to every proposed Bash match: args allowed, metacharacters rejected. */
 const SAFE_ARGS_TAIL = '(\\s[^;&|<>`$\\n]*)?$';
 
 export interface AllowProposal {
-  /** Normalized command shape the proposal covers (e.g. "corepack pnpm"). */
+  /** Normalized shape the proposal covers (e.g. "corepack pnpm", or "https://docs.example.com"). */
   readonly shape: string;
   /** How many times the human approved this shape. */
   readonly count: number;
@@ -50,6 +60,35 @@ export function commandShape(subject: string): string {
   return head.join(' ');
 }
 
+/**
+ * Normalize a WebFetch subject (a URL) to its origin — scheme + host (+ port
+ * if non-default) — discarding path, query, and fragment. Learning happens
+ * at the domain, never the full URL: approving one fetch to
+ * `https://docs.example.com/a` is not evidence `https://docs.example.com/b`
+ * (let alone a different domain entirely) is safe. Returns '' for anything
+ * that doesn't parse as an absolute URL, mirroring `commandShape`'s '' for
+ * an empty command.
+ */
+export function webFetchOriginShape(subject: string): string {
+  try {
+    const url = new URL(subject);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return '';
+  }
+}
+
+/** Learnable tools and the shape function each uses. Anything else is never learned from. */
+function shapeFor(tool: string, subject: string): string {
+  if (tool === 'Bash') {
+    return commandShape(subject);
+  }
+  if (tool === 'WebFetch') {
+    return webFetchOriginShape(subject);
+  }
+  return '';
+}
+
 function escapeRegex(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -61,50 +100,68 @@ function slugify(shape: string): string {
     .replace(/^-|-$/g, '');
 }
 
+/** Build the proposed rule for a learned (tool, shape) pair. */
+function buildRule(tool: string, shape: string, count: number, ratifiedByOne: boolean): PolicyRule {
+  const verb = ratifiedByOne ? 'ratified by one explicit human approval' : `approved ${count}×`;
+  if (tool === 'WebFetch') {
+    return {
+      id: `u-allow-web-${slugify(shape)}`,
+      action: 'allow',
+      tool: 'WebFetch',
+      // Anchored to the exact origin; the lookahead requires a path/query/
+      // fragment boundary or end-of-string, so a suffix domain
+      // (`example.com.evil.com`) can never match `example.com`'s rule.
+      match: `^${escapeRegex(shape)}(?=[/?#]|$)`,
+      description: `learned: fetches to "${shape}" ${verb} (proposed by ideal-harness-guard ${
+        ratifiedByOne ? 'ratify' : 'learn'
+      }; human-ratified)`,
+    };
+  }
+  return {
+    id: `u-allow-${slugify(shape)}`,
+    action: 'allow',
+    tool: 'Bash',
+    match: `^${escapeRegex(shape)}${SAFE_ARGS_TAIL}`,
+    description: `learned: "${shape}" ${verb} (proposed by ideal-harness-guard ${
+      ratifiedByOne ? 'ratify' : 'learn'
+    }; human-ratified)`,
+  };
+}
+
 /** Analyze journal entries and draft allow-rule proposals. Pure. */
 export function proposeAllowRules(
   entries: readonly GuardJournalEntry[],
   minCount: number = DEFAULT_MIN_COUNT,
 ): AllowProposal[] {
-  const asks = new Map<string, { count: number; sample: string }>();
-  const poisoned = new Set<string>(); // shapes that ever hit a deny (softened or not)
+  const asks = new Map<string, { tool: string; shape: string; count: number; sample: string }>();
+  const poisoned = new Set<string>(); // `${tool}:${shape}` pairs that ever hit a deny (softened or not)
 
   for (const entry of entries) {
-    if (entry.tool !== 'Bash') {
+    if (entry.tool !== 'Bash' && entry.tool !== 'WebFetch') {
       continue;
     }
-    const shape = commandShape(entry.subject);
+    const shape = shapeFor(entry.tool, entry.subject);
     if (shape === '') {
       continue;
     }
+    const key = `${entry.tool}:${shape}`;
     if (entry.action === 'deny' || entry.softened === true) {
-      poisoned.add(shape);
+      poisoned.add(key);
       continue;
     }
     if (entry.action === 'ask' && entry.ruleId !== 'egress-secrets') {
-      const seen = asks.get(shape) ?? { count: 0, sample: entry.subject };
+      const seen = asks.get(key) ?? { tool: entry.tool, shape, count: 0, sample: entry.subject };
       seen.count += 1;
-      asks.set(shape, seen);
+      asks.set(key, seen);
     }
   }
 
   const proposals: AllowProposal[] = [];
-  for (const [shape, { count, sample }] of asks) {
-    if (count < minCount || poisoned.has(shape)) {
+  for (const [key, { tool, shape, count, sample }] of asks) {
+    if (count < minCount || poisoned.has(key)) {
       continue;
     }
-    proposals.push({
-      shape,
-      count,
-      sample,
-      rule: {
-        id: `u-allow-${slugify(shape)}`,
-        action: 'allow',
-        tool: 'Bash',
-        match: `^${escapeRegex(shape)}${SAFE_ARGS_TAIL}`,
-        description: `learned: "${shape}" approved ${count}× (proposed by ideal-harness-guard learn; human-ratified)`,
-      },
-    });
+    proposals.push({ shape, count, sample, rule: buildRule(tool, shape, count, false) });
   }
   return proposals.sort((a, b) => b.count - a.count);
 }
@@ -126,13 +183,19 @@ export function learnFromJournal(cwd: string = process.cwd(), minCount: number =
  * approval instead of waiting for `DEFAULT_MIN_COUNT` repeats. Still refuses
  * a shape that ever produced a deny or softened deny; still produces only a
  * proposal, never an applied rule.
+ *
+ * `shape` is interpreted as a WebFetch origin when it parses as an absolute
+ * URL (`https://docs.example.com`), and as a Bash command shape otherwise
+ * (`npm test`) — no separate tool argument, so the existing single-string
+ * CLI contract (`ideal-harness-guard ratify <shape>`) is unchanged.
  */
 export function ratifyShape(entries: readonly GuardJournalEntry[], shape: string): AllowProposal | null {
+  const tool = webFetchOriginShape(shape) === shape ? 'WebFetch' : 'Bash';
   let poisoned = false;
   let count = 0;
   let sample: string | undefined;
   for (const entry of entries) {
-    if (entry.tool !== 'Bash' || commandShape(entry.subject) !== shape) {
+    if (entry.tool !== tool || shapeFor(tool, entry.subject) !== shape) {
       continue;
     }
     if (entry.action === 'deny' || entry.softened === true) {
@@ -147,18 +210,7 @@ export function ratifyShape(entries: readonly GuardJournalEntry[], shape: string
   if (poisoned || count === 0) {
     return null;
   }
-  return {
-    shape,
-    count,
-    sample: sample ?? shape,
-    rule: {
-      id: `u-allow-${slugify(shape)}`,
-      action: 'allow',
-      tool: 'Bash',
-      match: `^${escapeRegex(shape)}${SAFE_ARGS_TAIL}`,
-      description: `learned: "${shape}" ratified by one explicit human approval (proposed by ideal-harness-guard ratify; human-ratified)`,
-    },
-  };
+  return { shape, count, sample: sample ?? shape, rule: buildRule(tool, shape, count, true) };
 }
 
 /** Read the project journal and ratify one shape by id. Missing journal → null. */
@@ -237,7 +289,7 @@ export function formatAskDigest(digest: readonly AskDigestEntry[]): string {
 /** Human-facing rendering with the ratification instructions. */
 export function formatProposals(proposals: readonly AllowProposal[]): string {
   if (proposals.length === 0) {
-    return 'No proposals: no Bash command shape has enough repeated approvals in the journal yet.\n';
+    return 'No proposals: no Bash command or WebFetch origin shape has enough repeated approvals in the journal yet.\n';
   }
   const lines: string[] = [
     `${proposals.length} proposal(s) from repeated approvals. Review each; paste the ones you`,
