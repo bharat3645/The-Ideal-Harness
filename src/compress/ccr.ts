@@ -5,6 +5,11 @@
  * keyed by a content hash, and an inline `<<ccr:HASH>>` marker is left behind.
  * The agent can pull the original back on demand via the `ccr_retrieve` tool, so
  * no information is permanently lost — it's just moved out of the live context.
+ *
+ * The same hash → marker index also backs cross-turn dedup (`detect.ts`'s
+ * `dedupe` option): a second occurrence of exact-identical content within the
+ * same store's lifetime is a pointer lookup away, not a second stash. One
+ * mechanism, two callers — see decisions.md D039.
  */
 
 import { createHash } from 'node:crypto';
@@ -16,12 +21,17 @@ export function isCompressed(text: string): boolean {
   return CCR_MARKER.test(text);
 }
 
+/** Deterministic, exact-match content hash — the same algorithm behind every `<<ccr:HASH>>` marker. */
+export function hashContent(content: string): string {
+  return createHash('sha256').update(content).digest('hex').slice(0, 16);
+}
+
 export class CcrStore {
   private readonly store = new Map<string, string>();
 
-  /** Stash an original payload; returns its inline marker. */
+  /** Stash an original payload; returns its inline marker. Idempotent: re-stashing identical content returns the same marker without a second entry. */
   stash(original: string): string {
-    const hash = createHash('sha256').update(original).digest('hex').slice(0, 16);
+    const hash = hashContent(original);
     this.store.set(hash, original);
     return `<<ccr:${hash}>>`;
   }
@@ -35,6 +45,16 @@ export class CcrStore {
       return undefined;
     }
     return this.store.get(match[0].toLowerCase());
+  }
+
+  /**
+   * Look up the marker for exact-identical content already stashed earlier —
+   * without stashing it. Returns undefined on first occurrence (nothing to
+   * point to yet). Exact-hash-match only: no fuzzy or near-duplicate detection.
+   */
+  peekMarker(content: string): string | undefined {
+    const hash = hashContent(content);
+    return this.store.has(hash) ? `<<ccr:${hash}>>` : undefined;
   }
 
   get size(): number {
