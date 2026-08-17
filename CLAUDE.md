@@ -10,6 +10,16 @@ enforcement floor and bootstrap skill via `.claude/settings.json`. The six modul
 only lanes in play here — the harness ships as a single Claude Code plugin, but each module is its
 own MCP server/CLI and its own source boundary; treat them as separate lanes, not as a monolith.
 
+## Continuing the v2 backlog
+
+This project is mid-way through working through `VISION.md`'s per-module "could become"
+backlog, one scoped item at a time — see **`V2-EXECUTION-PLAN.md`** for the full
+methodology, the current status tracker, and the reasoning behind the current sprint
+(including why Cordis/DeepSeek Harness were evaluated and declined as a dependency,
+`decisions.md` D036). Read that file, plus `decisions.md`'s most recent entries, before
+picking up new work here — it recovers full context faster than reading the whole git
+history, and is written specifically for a session that starts cold.
+
 ## The harness modules (the only lanes)
 
 | Need | Module | How to reach it |
@@ -133,7 +143,7 @@ the floor); `IDEAL_HARNESS_USER_POLICY=off` is the kill-switch.
 - **Validate:** `corepack pnpm validate` (the substrate validates its own repo).
 - **Lint/format:** `corepack pnpm biome` / `corepack pnpm biome:fix`.
 - **Layout:** one package at the repo root — `src/{core,guard,compress,memory,orchestrate,web}` compile to `dist/<module>/`; six bins + five MCP servers ship from the single package.
-- **Important paths:** `src/{core,guard,compress,memory,orchestrate,web}`; policy in `src/guard/policy/defaults.ts`; hooks in `hooks/`; agents in `agents/`; dogfood wiring in `.claude/settings.json` (+ statusline in `.claude/settings.local.json`); project docs at the repo root — `README.md`, `DESIGN.md`, `VISION.md`, `CHANGELOG.md`, `decisions.md`, `flow.md`, `BENCHMARK.md`.
+- **Important paths:** `src/{core,guard,compress,memory,orchestrate,web}`; policy in `src/guard/policy/defaults.ts`; hooks in `hooks/`; agents in `agents/`; dogfood wiring in `.claude/settings.json` (+ statusline in `.claude/settings.local.json`); project docs at the repo root — `README.md`, `DESIGN.md`, `VISION.md`, `CHANGELOG.md`, `decisions.md`, `V2-EXECUTION-PLAN.md`, `flow.md`, `BENCHMARK.md`.
 - **Never touch:** `.claude/settings.json`, `.claude-plugin/*`, `src/guard/**`, `dist/guard/**`, and `hooks/*` are policy-protected — the floor denies edits to them. If one of them genuinely needs to change (e.g. `.claude-plugin/plugin.json` gaining a new module's MCP server), say so explicitly and let the human make the edit — do not attempt to route around the deny.
 
 ## Honesty rule
