@@ -90,3 +90,20 @@ test('listWorktrees excludes the primary checkout, only reporting ones under .id
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('createWorktree treats a flag-shaped baseRef as a literal ref, never as a git option (issue #10)', async () => {
+  const dir = initRepo();
+  try {
+    // "-x" has no `--` termination would be parsed by git as an unknown
+    // switch ("error: unknown switch `x'", exit 129) rather than as a ref
+    // git tries and fails to resolve ("fatal: invalid reference: -x", exit
+    // 128). The `--` separator in createWorktree must produce the latter:
+    // proof the value reached git as an argument, not as option parsing.
+    const result = await createWorktree('task-flag', { cwd: dir, baseRef: '-x' });
+    assert.equal(result.ok, false);
+    assert.doesNotMatch(result.stderr, /unknown switch|unknown option|error: unknown/i);
+    assert.match(result.stderr, /invalid reference|not a valid ref|unknown revision/i);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -12,9 +12,13 @@
  *
  * Fixed argv, never a shell string: every git invocation here passes an
  * argument array straight to `spawn`, so there is no shell-injection surface
- * to gate the way `verify.ts` has to gate an arbitrary command string. The
- * only untrusted input is the worktree `id`, which is validated to a safe
- * charset before it ever touches a path or branch name.
+ * to gate the way `verify.ts` has to gate an arbitrary command string. Two
+ * inputs are untrusted (model-supplied): the worktree `id`, validated to a
+ * safe charset before it ever touches a path or branch name, and `baseRef`
+ * (issue #10) — unvalidated in content, but a `--` separator is placed
+ * immediately before it in the `git worktree add` argv so it can never be
+ * parsed as an option/flag regardless of what it starts with, even though it
+ * is never passed through a shell.
  */
 
 import { spawn } from 'node:child_process';
@@ -77,7 +81,10 @@ export async function createWorktree(id: string, options: CreateWorktreeOptions 
   const baseRef = options.baseRef ?? 'HEAD';
   const path = join(worktreesRoot(cwd), id);
   const branch = `ideal-harness/${id}`;
-  const result = await runGit(['worktree', 'add', '-b', branch, path, baseRef], cwd);
+  // `--` terminates option parsing unambiguously: a `baseRef` starting with
+  // `-` (e.g. an accidental or adversarial flag-shaped value) is guaranteed to
+  // land as the literal ref argument, never as a git option. See issue #10.
+  const result = await runGit(['worktree', 'add', '-b', branch, path, '--', baseRef], cwd);
   return { ...result, ...(result.ok ? { info: { id, path, branch } } : {}) };
 }
 
