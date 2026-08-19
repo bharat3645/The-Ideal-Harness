@@ -3,7 +3,26 @@
   "version": "0.3.0",
   "type": "module",
   "description": "A Claude-Code-native agent harness with an MCP-portable enforcement and tooling core: the substrate (loader, validation, skill templating + multi-host generation), the deny-wins enforcement floor, deterministic context compression, structural + episodic memory, and orchestration — all in one package.",
+  "keywords": [
+    "claude-code",
+    "mcp",
+    "model-context-protocol",
+    "ai-agent",
+    "agent-harness",
+    "llm-security",
+    "prompt-injection",
+    "policy-enforcement",
+    "sandbox",
+    "context-compression",
+    "code-graph",
+    "agentic-ai"
+  ],
+  "homepage": "https://github.com/bharat3645/The-Ideal-Harness#readme",
+  "bugs": {
+    "url": "https://github.com/bharat3645/The-Ideal-Harness/issues"
+  },
   "license": "MIT",
+  "author": "bharat3645",
   "packageManager": "pnpm@10.33.0",
   "engines": {
     "node": ">=21"
