@@ -111,7 +111,8 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   const idleMs = Number(idleMsArg) || 5 * 60 * 1000;
-  const startupTimeoutMs = Number(startupTimeoutMsArg) || 15000;
+  // Kept in sync with daemon.ts's own default -- see its comment for why 15s wasn't enough.
+  const startupTimeoutMs = Number(startupTimeoutMsArg) || 30000;
   const pollIntervalMs = Number(pollIntervalMsArg) || DEFAULT_POLL_INTERVAL_MS;
 
   const chrome = spawn(chromeExe, [...CHROME_ARGS, `--user-data-dir=${userDataDir}`], {

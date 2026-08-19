@@ -146,7 +146,12 @@ export async function ensureDaemon(options: EnsureDaemonOptions = {}): Promise<E
     cwd = process.cwd(),
     env = process.env,
     idleMs = DEFAULT_IDLE_MS,
-    startupTimeoutMs = 15000,
+    // Cold Chrome launch time genuinely varies -- 15s was found too tight on real
+    // GitHub Actions runners (confirmed via a real, non-concurrent CI failure on
+    // 2026-08-19: one leg's launch took just over 15s while an immediately following
+    // fresh launch on the same runner finished in under 10s), not a design constant
+    // argued anywhere, so widened for real-world headroom rather than left to flake.
+    startupTimeoutMs = 30000,
     pollIntervalMs,
   } = options;
 
