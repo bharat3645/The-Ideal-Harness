@@ -22,7 +22,7 @@ export interface TieredExtraction extends Extraction {
   readonly tier: ExtractionTier;
 }
 
-type Lang = 'typescript' | 'tsx' | 'javascript' | 'python' | 'java' | 'kotlin';
+type Lang = 'typescript' | 'tsx' | 'javascript' | 'python' | 'java' | 'kotlin' | 'go' | 'rust';
 
 const GRAMMAR_PACKAGE: Readonly<Record<Lang, string>> = {
   typescript: 'tree-sitter-typescript',
@@ -31,6 +31,8 @@ const GRAMMAR_PACKAGE: Readonly<Record<Lang, string>> = {
   python: 'tree-sitter-python',
   java: 'tree-sitter-java',
   kotlin: '@tree-sitter-grammars/tree-sitter-kotlin',
+  go: 'tree-sitter-go',
+  rust: 'tree-sitter-rust',
 };
 
 const GRAMMAR_WASM: Readonly<Record<Lang, string>> = {
@@ -40,6 +42,8 @@ const GRAMMAR_WASM: Readonly<Record<Lang, string>> = {
   python: 'tree-sitter-python.wasm',
   java: 'tree-sitter-java.wasm',
   kotlin: 'tree-sitter-kotlin.wasm',
+  go: 'tree-sitter-go.wasm',
+  rust: 'tree-sitter-rust.wasm',
 };
 
 /** Node types whose `name` field is a definition site, per language family. */
@@ -83,6 +87,31 @@ const KOTLIN_DEF_TYPES: Readonly<Record<string, SymbolKind>> = {
   object_declaration: 'class',
   function_declaration: 'function',
 };
+/**
+ * Go's grammar gives function vs. method a genuine, unambiguous node-type
+ * distinction (`method_declaration` carries a `receiver` field;
+ * `function_declaration` never does) — unlike Kotlin, no coarsening needed.
+ */
+const GO_FUNC_DEF_TYPES: Readonly<Record<string, SymbolKind>> = {
+  function_declaration: 'function',
+  method_declaration: 'method',
+};
+/**
+ * Rust's `struct`/`enum`/`trait`/`const`/`static`/`type` items all carry an
+ * unambiguous node type, matching Java's `enum_declaration`/`record_declaration`
+ * -> 'class' precedent for `enum_item`. `function_item` is handled separately
+ * (see `walkRustForSymbols`) because Rust reuses the SAME node type for both a
+ * free function and an impl-block method — the only way to tell them apart is
+ * parent context, which this flat map can't express.
+ */
+const RUST_DEF_TYPES: Readonly<Record<string, SymbolKind>> = {
+  struct_item: 'class',
+  enum_item: 'class',
+  trait_item: 'interface',
+  const_item: 'const',
+  static_item: 'const',
+  type_item: 'type',
+};
 
 export function languageForFile(file: string): Lang | null {
   if (/\.tsx$/i.test(file)) return 'tsx';
@@ -91,6 +120,8 @@ export function languageForFile(file: string): Lang | null {
   if (/\.py$/i.test(file)) return 'python';
   if (/\.java$/i.test(file)) return 'java';
   if (/\.kts?$/i.test(file)) return 'kotlin';
+  if (/\.go$/i.test(file)) return 'go';
+  if (/\.rs$/i.test(file)) return 'rust';
   return null;
 }
 
@@ -245,6 +276,119 @@ function extractDeclarationsOnly(
   return { nodes, edges: [] };
 }
 
+function extractGo(file: string, tree: import('web-tree-sitter').Tree): Extraction {
+  const nodes: SymbolNode[] = [];
+  const root = tree.rootNode;
+  walkForSymbols(root, file, GO_FUNC_DEF_TYPES, nodes);
+  // `type_spec` (`type X Y`) and `type_alias` (`type X = Y`) share the same
+  // `name`/`type` field shape; the `type` field's own node type tells us
+  // struct vs. interface vs. anything else (a named type, a slice, a func
+  // type, ...), which collapses to 'type' the same way TS's `type_alias_
+  // declaration` already does for a non-struct/interface alias.
+  for (const spec of [...root.descendantsOfType('type_spec'), ...root.descendantsOfType('type_alias')]) {
+    const name = spec.childForFieldName('name')?.text;
+    if (!name) continue;
+    const underlying = spec.childForFieldName('type')?.type;
+    const kind: SymbolKind =
+      underlying === 'struct_type' ? 'class' : underlying === 'interface_type' ? 'interface' : 'type';
+    nodes.push({ name, kind, file, line: spec.startPosition.row + 1, confidence: 'extracted' });
+  }
+  // const_spec/var_spec's `name` field is `multiple: true` (Go allows
+  // `const A, B = 1, 2`) — childForFieldName only returns the first match, so
+  // childrenForFieldName is required here to not silently drop B.
+  for (const spec of [...root.descendantsOfType('const_spec'), ...root.descendantsOfType('var_spec')]) {
+    for (const id of spec.childrenForFieldName('name')) {
+      if (id?.text) {
+        nodes.push({ name: id.text, kind: 'const', file, line: id.startPosition.row + 1, confidence: 'extracted' });
+      }
+    }
+  }
+  const edges: Edge[] = [];
+  for (const imp of root.descendantsOfType('import_spec')) {
+    const path = imp.childForFieldName('path')?.text;
+    if (path) {
+      edges.push({ from: file, to: stripQuotes(path), kind: 'imports' });
+    }
+  }
+  return { nodes, edges };
+}
+
+/**
+ * Rust reuses `function_item` for both a free function and an impl-block
+ * method, so unlike every other language handled by `walkForSymbols`, the
+ * kind depends on parent context (is this node a descendant of an
+ * `impl_item`?) rather than node type alone. This walker tracks that one bit
+ * of context down the tree; everything else (struct/enum/trait/const/
+ * static/type) is a flat, unambiguous node-type lookup via `RUST_DEF_TYPES`,
+ * same as every other language here.
+ */
+function walkRustForSymbols(
+  node: import('web-tree-sitter').Node,
+  file: string,
+  nodes: SymbolNode[],
+  insideImpl: boolean,
+): void {
+  if (node.type === 'function_item') {
+    const name = node.childForFieldName('name')?.text;
+    if (name) {
+      nodes.push({
+        name,
+        kind: insideImpl ? 'method' : 'function',
+        file,
+        line: node.startPosition.row + 1,
+        confidence: 'extracted',
+      });
+    }
+  } else {
+    const kind = RUST_DEF_TYPES[node.type];
+    if (kind) {
+      const name = node.childForFieldName('name')?.text;
+      if (name) {
+        nodes.push({ name, kind, file, line: node.startPosition.row + 1, confidence: 'extracted' });
+      }
+    }
+  }
+  const nextInsideImpl = insideImpl || node.type === 'impl_item';
+  for (const child of node.namedChildren) {
+    if (child) {
+      walkRustForSymbols(child, file, nodes, nextInsideImpl);
+    }
+  }
+}
+
+/**
+ * `impl` blocks are deliberately NOT represented as their own node or edge.
+ * `SymbolNode`/`Edge` are frozen contracts for this issue (#1/#2's own
+ * acceptance criteria), and `EdgeKind` is `'imports'` only — inventing a new
+ * edge kind (e.g. `'implements'`) to point an impl block at its type would
+ * widen that contract, and reusing `'imports'` for something that isn't an
+ * import would be exactly the kind of low-confidence misrepresentation this
+ * tier exists to avoid. Instead, the practical value of impl-awareness is
+ * captured within the existing contract: a function inside an impl body is
+ * correctly classified as 'method' rather than flattened to 'function' (see
+ * `walkRustForSymbols`), the same function-vs-method distinction JS/Java
+ * already make.
+ *
+ * `mod` declarations are similarly not extracted as symbol nodes — none of
+ * the six `SymbolKind` values accurately describes a module/namespace, and
+ * guessing 'class' or 'type' would misrepresent it the same way Java/Kotlin's
+ * import paths are left unreconstructed rather than guessed at (see
+ * `extractDeclarationsOnly`). Items nested inside a `mod { ... }` block are
+ * still found — `walkRustForSymbols` recurses into every named child
+ * regardless of whether the current node itself produced a symbol.
+ *
+ * No import edges: `use_declaration`'s single `argument` field can itself be
+ * a deeply nested scoped-use-list / alias / wildcard expression, not a flat
+ * path string. Reconstructing a dotted import target would mean parsing that
+ * nested shape by hand — the same low-confidence guess Java/Kotlin's import
+ * paths already decline (see `extractDeclarationsOnly`).
+ */
+function extractRust(file: string, tree: import('web-tree-sitter').Tree): Extraction {
+  const nodes: SymbolNode[] = [];
+  walkRustForSymbols(tree.rootNode, file, nodes, false);
+  return { nodes, edges: [] };
+}
+
 /**
  * Extract symbols for `file`, preferring the tree-sitter tier and degrading
  * to the regex tier for anything unsupported or unavailable. Never throws —
@@ -269,7 +413,11 @@ export async function extractSymbolsTiered(file: string, content: string): Promi
                 ? extractDeclarationsOnly(file, tree, JAVA_DEF_TYPES)
                 : lang === 'kotlin'
                   ? extractDeclarationsOnly(file, tree, KOTLIN_DEF_TYPES)
-                  : extractJsFamily(file, tree);
+                  : lang === 'go'
+                    ? extractGo(file, tree)
+                    : lang === 'rust'
+                      ? extractRust(file, tree)
+                      : extractJsFamily(file, tree);
           tree.delete();
           return { ...extraction, tier: 'treesitter' };
         }
