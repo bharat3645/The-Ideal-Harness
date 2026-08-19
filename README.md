@@ -296,13 +296,14 @@ Tag `vX.Y.Z` to publish via CI (`.github/workflows/release.yml`, needs the `NPM_
 
 ## Verification
 
-- **434 unit tests** on `node:test` with zero test-framework dependencies. In CI (no
-  semgrep/osv-scanner on PATH), 430 pass, 0 fail, 4 skip. Locally, with both binaries
-  actually installed, those same 4 run for real and fail — not flakiness: they're the
-  real-binary integration tests from issue #7 catching 3 genuine bugs in
-  `vet_skill_deep`'s parsers, tracked as issue #36 (`src/guard/vet/external.ts` is
-  self-policy-protected, so this session could document the bugs with failing tests but
-  not fix them). Stated here rather than silently expected to pass.
+- **451 unit tests** on `node:test` with zero test-framework dependencies. Locally, with
+  `semgrep`/`osv-scanner` actually installed, 444 pass, 4 fail, 3 skip — not flakiness:
+  the 4 failures are the real-binary integration tests from issue #7 catching 3 genuine
+  bugs in `vet_skill_deep`'s parsers, tracked as issue #36. `src/guard/vet/external.ts`
+  is self-policy-protected, so this session couldn't apply the fix directly — a
+  ready-to-apply patch is in [`patches/`](./patches) instead (`decisions.md` D043). In CI
+  (no semgrep/osv-scanner on PATH), those 4 skip rather than fail. Stated here rather
+  than silently expected to pass.
 - Biome clean, fully type-checked.
 - CI runs biome + build + check + test + validate + a skill-threat self-scan on every change.
 - **Dogfooded.** The substrate validates its own repo; the code-graph indexes its own source.

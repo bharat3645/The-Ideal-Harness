@@ -44,13 +44,26 @@ bugs in `src/guard/vet/external.ts` (issue #36).
   files included.
 - **security posture** — published `SECURITY-COVERAGE.md`, an honest OWASP Agentic
   Applications Top 10 (2026) coverage table: 1 full, 8 partial, 1 out of scope, every
-  verdict cited to a real file (#20). Opened #35 (Windows sandbox parity — no code written,
-  self-policy-protected).
+  verdict cited to a real file (#20). Opened #35 (Windows sandbox parity).
+- **ci** — the three GitHub Actions used in `ci.yml`/`release.yml` pinned to immutable
+  commit SHAs (not a mutable tag), then bumped to each action's latest major, still
+  SHA-pinned, after checking changelogs for breaking changes against this repo's specific
+  usage (D042); added `.github/dependabot.yml` (actions + devDependencies) so the pins
+  don't rot unnoticed; fixed a real, observed CI flake (Chrome-spawn matrix contention,
+  then a too-tight 15s daemon-startup budget) rather than leaving it to retry-and-hope.
+- **patches** — issues #3, #4, #35, and #36 all need edits inside self-policy-protected
+  paths (`hooks/*.mjs` or `src/guard/`), which this session — like any agent working
+  within the floor — cannot write to directly. Rather than leave them as writeups only,
+  ready-to-apply patches (`.patch` + a companion `.md` explaining the fix and how it was
+  verified) were prepared for all four and committed to `patches/` for a human to review
+  and apply (D043). #35's patch is honestly partial — it doesn't close the issue; the
+  `.md` says exactly why.
 - **housekeeping** — retired 11 stale GitHub issues (#21-#32) from a since-rejected v2.1-v2.3
   plan that would have added a runtime dependency and duplicated already-shipped/already-
   declined work; corrected `plan.md`'s pre-flatten paths and a CHANGELOG arithmetic error (#12);
   corrected `engines.node` from a false `>=20` to the real `>=21` (`node --test`'s glob support
-  needs it) (#9).
+  needs it) (#9); added npm discoverability metadata (`keywords`/`homepage`/`bugs`/`author`)
+  to `package.json`, verified via a real `pnpm release:dry` packaging run.
 
 ## Unreleased
 

@@ -59,11 +59,26 @@ contract turns "the model has to remember to use this" into "this just happens."
 pair naturally — same architecture, opposite ends of the call. Say so in the issue if you
 want both and the other will be held for you.
 
-**#35 and #36 both live in `src/guard/`,** which is self-policy-protected — the harness's
-own floor denies writing there through the harness itself, on purpose, so a model can't
-quietly widen its own enforcement contract. Neither blocks a human contributor working
-normally; both were found and written up in detail (failing tests included, for #36) by
-this project's own dogfooding, then handed off rather than routed around.
+**All four of #3, #4, #35, #36 touch self-policy-protected paths** (`hooks/*.mjs` or
+`src/guard/`) — the harness's own floor denies writing there through the harness itself,
+on purpose, so a model can't quietly widen its own enforcement contract. None of the four
+block a human contributor working normally. Rather than leave them as writeups only,
+ready-to-apply patches were prepared for all four and committed to **[`patches/`](../../tree/main/patches)**
+— each a real unified diff plus a companion `.md` explaining what's fixed, how it was
+verified (against real binaries/platforms where possible, honestly caveated where it
+wasn't), and exactly how to apply it (`git apply patches/<name>.patch`). Review before
+applying, same as any other patch from any other contributor — these were prepared by an
+agent working within this project's own floor, not merged by it. **#35's patch is
+deliberately partial**: it adds a verified-working Windows process-tracking primitive but
+leaves `buildSandboxCommand` unchanged (still `ok: false` on Windows) because the
+network-egress half needs Administrator elevation and the process-containment half hit a
+real, documented stdout-relay bug wiring it into the sandbox path — shipping a shakier
+mechanism to close a checkbox was judged worse than an honest partial. **#36's patch**
+includes a full CVSS 3.1 Base Score calculator (verified against real `osv-scanner`
+output) and a test-assertion follow-up diff embedded in its `.md` rather than a second
+patch file — writing that second file was attempted and denied by the floor itself (no
+human present in that background session to approve the `Write`), respected rather than
+retried.
 
 ---
 
