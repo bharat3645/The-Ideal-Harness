@@ -1355,3 +1355,44 @@ never deleted or edited to look like it always said the new thing.
   - **#35 is the one patch that does NOT close its issue**, and says so as the headline of its own `.md`: it adds a verified-working Windows process-tracking primitive (`windowsJobObjectSupported`, real `CreateJobObject`/`AssignProcessToJobObject` calls via PowerShell's inline-C# feature, no native addon) but leaves `buildSandboxCommand` returning `ok: false` on Windows exactly as before. Two things were tested directly and found NOT to work as commonly documented: `netsh advfirewall` needs Administrator elevation (confirmed by running it and getting denied), and `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` — the flag most write-ups lead with — did not actually kill the tracked process on this machine when tested twice. Wiring the working primitive into the actual sandbox path also hit a real stdout-relay bug (two different PowerShell-process-wrapper approaches either produced no output or hung for a `node -e` child) that would risk silently degrading `runVerify`'s stdout capture — judged worse to ship than to leave honestly unfixed. This is the correct outcome for this project's own stated bar ("verify, don't assert") even though it means the issue stays open.
 - **Alternatives rejected:** having the agent argue for a temporary self-policy carve-out for this session — rejected outright, never seriously considered; the floor's whole value is that it doesn't negotiate. Skipping #35 entirely once the "quick win" (network egress) turned out to need elevation — rejected in favor of shipping the smaller, real, verified piece (process tracking) with the gap stated plainly, matching this project's own "an unflattering result stated as plainly as the good ones" house style (`BENCHMARK.md`, `AGENTS.md`).
 - **Home:** `patches/issue-3-auto-apply-compression.{patch,md}`, `patches/issue-4-auto-apply-sandbox.{patch,md}`, `patches/issue-35-windows-sandbox.{patch,md}`, `patches/issue-36-vet-external-bugs.{patch,md}`. No changes inside any self-policy-protected path — by construction, since none could be written.
+
+## D044 — The four D043 patches applied for real, with explicit operator go-ahead
+- **Date:** 2026-08-19
+- **Status:** decided, shipped (partially: #35 stays open by design, see below)
+- **Decision:** D043's four patches sat in `patches/` because the harness's own self-policy
+  floor denies the *model* writing to `hooks/*.mjs` and `src/guard/**`, even to itself, by
+  design — that protection doesn't have an exception for "but I reviewed my own patch
+  carefully." A later session, asked explicitly to finish outstanding work and prepare the
+  project for release, asked the operator whether to apply them and received an explicit
+  go-ahead in-thread before touching any protected path — the same shape D025 already
+  established for this exact situation ("required an explicit human go-ahead... given in
+  this same exchange, so it's done"). All four patches (`git apply --check`-verified first),
+  plus the test-assertion follow-up diff embedded in issue #36's `.md` (that one landing in
+  `test/`, not a protected path, so it was always writable), were applied, then the whole
+  build was re-verified from scratch: `biome` (3 pre-existing formatting nits in the patches
+  themselves, fixed via `biome:fix`, then clean), `build`, `check`, and the full test suite
+  — 445/451 passing, with the remaining 3 failures confirmed to be exactly the pre-existing,
+  environment-conditional "binary genuinely absent" tests documented in `decisions.md` D043
+  and `ROADMAP.md`, failing here only because `semgrep 1.173.0`/`osv-scanner 1.9.2` are
+  actually installed on this machine (verified via `which`/`--version`, not assumed) — the
+  same 3 tests pass in CI, which has neither binary. `validate` and `doctor` both clean.
+- **#35 stays open, on purpose.** Its own patch note says plainly it doesn't close the
+  issue, and nothing in this session changed that: the Windows process-tracking primitive
+  (`windowsJobObjectSupported`) shipped, `buildSandboxCommand` still returns `ok: false` on
+  `win32`. Closing #35 here would misrepresent partial work as done, which is exactly what
+  this project's honesty rule exists to prevent.
+- **`patches/` retired.** Its only purpose was staging reviewable diffs for a human to apply
+  through an ordinary `git apply` — once applied and merged, a stale `.patch` file that no
+  longer applies against current `HEAD` is a liability (a future contributor could `git
+  apply` it against the wrong baseline, or assume the work is still pending because the
+  file still exists), not a record worth keeping. The actual record — what changed, how it
+  was verified, what's still open — lives in this entry, D043, and each touched file's own
+  module doc, which is where a reader would look for it anyway.
+- **Alternatives rejected:** leaving the patches unapplied and only documenting them —
+  rejected once the operator confirmed the intent was to actually finish and ship, not just
+  audit; re-verifying every claim from D043's `.md` files from scratch rather than trusting
+  them — the safer default for security-relevant code the model itself cannot normally
+  touch, and it surfaced the 3 formatting nits D043's own verification (run against scratch
+  copies, not this repo's real `biome` config) couldn't have caught.
+- **Home:** `hooks/posttooluse.mjs`, `hooks/pretooluse.mjs`, `src/guard/sandbox.ts`,
+  `src/guard/vet/external.ts`, `test/guard/vet-external.test.ts`. `patches/` removed.

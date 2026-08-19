@@ -65,6 +65,38 @@ bugs in `src/guard/vet/external.ts` (issue #36).
   needs it) (#9); added npm discoverability metadata (`keywords`/`homepage`/`bugs`/`author`)
   to `package.json`, verified via a real `pnpm release:dry` packaging run.
 
+### v0.3.0 addendum — the four self-policy-blocked patches applied for real (2026-08-19, same day)
+
+The four patches D043 prepared and left in `patches/` for a human to review were reviewed
+and applied in this same release-prep pass, with explicit operator go-ahead (`decisions.md`
+D044 — same precedent as D025). `patches/` is now retired; the record lives in D043/D044 and
+each file's own module doc.
+
+- **#3 and #4 now ship live, not just as MCP tools.** `hooks/posttooluse.mjs` auto-compresses
+  already-redacted tool output (kill switch `IDEAL_HARNESS_AUTO_COMPRESS=off`);
+  `hooks/pretooluse.mjs` auto-wraps an allowed `Bash` call in the OS sandbox via
+  `updatedInput` (kill switch `IDEAL_HARNESS_AUTO_SANDBOX=off`, no-network by default).
+- **#36 fixed and reverified against the real binaries**: `src/guard/vet/external.ts`'s
+  `check_id` is now the bare rule id (was path-prefixed); OSV severity now comes from a real
+  CVSS 3.1 Base Score calculator instead of a substring match that could never reach
+  `'critical'`; both shell-outs use a scrubbed environment instead of `env: {}` (which broke
+  semgrep's Windows entry point). Verified against real `semgrep 1.173.0`/`osv-scanner
+  1.9.2` — confirmed installed on this machine via `which`/`--version`, not assumed.
+- **#35 partially shipped, honestly**: `src/guard/sandbox.ts` gained
+  `windowsJobObjectSupported()` — real, verified Windows process-tracking primitives — but
+  `buildSandboxCommand` still returns `ok: false` on `win32`. The issue stays open; the gap
+  (network egress needs elevation, and a stdout-relay problem blocks wiring the process
+  primitive into the sandbox path safely) is documented in the module's own doc comment.
+- Swept in from the same patch set: `test/web/browse/integration.test.ts` now retries a
+  real-Chrome daemon spawn once on a startup timeout instead of widening the 30s budget
+  again (CI hit that exact boundary — `30067ms` — the same week the budget was last
+  widened); `.claude/scheduled_tasks.lock`, a stray runtime lock file accidentally
+  committed in the initial commit, is untracked and gitignored.
+- Full re-verification, not a trust-the-patch merge: `biome` (3 formatting nits from the
+  patches themselves, fixed), `build`, `check` all clean; 445/451 tests pass, the 3
+  failures confirmed to be the pre-existing, environment-conditional "binary genuinely
+  absent" tests (they pass in CI, which has neither binary); `validate` and `doctor` clean.
+
 ## Unreleased
 
 ### v2 Phase 2 addendum 3 — closes D027's last two gaps: autoplan, OSV/semgrep (2026-08-11, same day)
