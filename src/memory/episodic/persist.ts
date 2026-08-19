@@ -16,14 +16,47 @@ export function episodicSnapshotPath(storeDir: string): string {
   return join(storeDir, 'episodic.json');
 }
 
+/**
+ * `existsSync` then `readFileSync` is two syscalls, not one: a concurrent
+ * writer's atomic rename can land in the gap between them, turning a
+ * perfectly valid snapshot into a spurious `ENOENT` on the read (issue #17).
+ * That is a transient race, not evidence of corruption, so it gets one
+ * retry before being treated the same as "never existed" — mirrors
+ * `structural/persist.ts`'s identical helper.
+ */
+function readIfExists(path: string): string | null {
+  if (!existsSync(path)) {
+    return null;
+  }
+  try {
+    return readFileSync(path, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error;
+    }
+    if (!existsSync(path)) {
+      return null;
+    }
+    try {
+      return readFileSync(path, 'utf8');
+    } catch (retryError) {
+      if ((retryError as NodeJS.ErrnoException).code === 'ENOENT') {
+        return null;
+      }
+      throw retryError;
+    }
+  }
+}
+
 /** Load a persisted store. Missing → empty. Corrupt → quarantined, then empty. */
 export function loadEpisodicSnapshot(storeDir: string, workspaceKey: string = 'default'): EpisodicStore {
   const path = episodicSnapshotPath(storeDir);
-  if (!existsSync(path)) {
+  const raw = readIfExists(path);
+  if (raw === null) {
     return new EpisodicStore(workspaceKey);
   }
   try {
-    return EpisodicStore.parse(readFileSync(path, 'utf8'), workspaceKey);
+    return EpisodicStore.parse(raw, workspaceKey);
   } catch {
     try {
       renameSync(path, `${path}.corrupt`);

@@ -62,6 +62,14 @@ export interface AddFileOutcome {
 export class CodeGraph {
   private readonly files = new Map<string, FileRecord>();
 
+  /**
+   * `workspaceKey` stamps every serialized snapshot (mirrors `EpisodicStore`'s
+   * defence-in-depth pattern) so a graph.json copied, restored, or merged into
+   * the wrong project is detected on load rather than silently answering
+   * `query_graph` with another project's symbols.
+   */
+  constructor(private readonly workspaceKey: string = 'default') {}
+
   /** Regex-tier only, synchronous (the original v0.1 entry point — unchanged behavior). */
   addFile(file: string, content: string): void {
     const { nodes, edges } = extractSymbols(file, content);
@@ -89,6 +97,20 @@ export class CodeGraph {
   /** Drop a file from the graph (e.g. it was deleted from disk). */
   removeFile(file: string): boolean {
     return this.files.delete(file);
+  }
+
+  /**
+   * Replace this graph's contents in place with `other`'s. Used to resync a
+   * long-lived in-memory graph after a lock-protected reload-mutate-write
+   * cycle (see issue #17 / `decisions.md` D039) finds fresher on-disk state
+   * than this instance held — every closure already holding a reference to
+   * `this` sees the merged state immediately, with no reassignment needed.
+   */
+  loadFrom(other: CodeGraph): void {
+    this.files.clear();
+    for (const [file, record] of other.files) {
+      this.files.set(file, record);
+    }
   }
 
   allNodes(): SymbolNode[] {
@@ -181,6 +203,7 @@ export class CodeGraph {
   /** Serialize the whole graph (nodes, edges, tier, content hash per file) for persistence. */
   serialize(): string {
     return JSON.stringify({
+      workspace: this.workspaceKey,
       files: [...this.files.entries()].map(([file, r]) => ({ file, ...r })),
     });
   }
@@ -191,10 +214,24 @@ export class CodeGraph {
    * completely invalid JSON string still throws — callers reading from disk
    * (`loadGraphSnapshot`) use that to quarantine the poison-pill file rather
    * than silently discarding it.
+   *
+   * Workspace stamp check (issue #16): a snapshot whose `workspace` field is
+   * present and does NOT match `workspaceKey` throws too — the same
+   * quarantine path a corrupt file takes, since a foreign-workspace graph is
+   * exactly as unsafe to serve as a malformed one. A snapshot with no
+   * `workspace` field at all predates this check (legacy) and loads normally;
+   * `loadGraphSnapshot` (the I/O boundary) is responsible for warning about
+   * that case so this method can stay pure/I/O-free, matching this file's
+   * existing contract.
    */
-  static parse(json: string): CodeGraph {
-    const graph = new CodeGraph();
-    const data = JSON.parse(json) as { files?: unknown[] };
+  static parse(json: string, workspaceKey: string = 'default'): CodeGraph {
+    const data = JSON.parse(json) as { workspace?: unknown; files?: unknown[] };
+    if (typeof data.workspace === 'string' && data.workspace !== workspaceKey) {
+      throw new Error(
+        `workspace stamp mismatch: snapshot belongs to "${data.workspace}", bound workspace is "${workspaceKey}"`,
+      );
+    }
+    const graph = new CodeGraph(workspaceKey);
     for (const raw of data.files ?? []) {
       if (raw === null || typeof raw !== 'object') {
         continue;

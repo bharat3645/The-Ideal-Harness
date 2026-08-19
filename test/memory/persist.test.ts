@@ -72,6 +72,74 @@ test('loadGraphSnapshot quarantines a corrupt snapshot instead of crashing or lo
   });
 });
 
+// --- issue #16: workspace-stamped graph snapshots ---
+
+test('CodeGraph.serialize stamps the workspace; parse round-trips when the stamp matches', () => {
+  const graph = new CodeGraph('proj-a');
+  graph.addFile('a.ts', 'export function f() {}');
+  const restored = CodeGraph.parse(graph.serialize(), 'proj-a');
+  assert.deepEqual(
+    restored.allNodes().map((n) => n.name),
+    ['f'],
+  );
+});
+
+test('CodeGraph.parse throws on a workspace-stamp mismatch (callers quarantine, same as corrupt JSON)', () => {
+  const graph = new CodeGraph('proj-a');
+  graph.addFile('a.ts', 'export function f() {}');
+  assert.throws(() => CodeGraph.parse(graph.serialize(), 'proj-b'), /workspace stamp mismatch/);
+});
+
+test('CodeGraph.parse accepts a legacy snapshot with no workspace field at all (pre-#16 format)', () => {
+  const legacy = JSON.stringify({ files: [{ file: 'a.ts', hash: 'h', nodes: [], edges: [] }] });
+  const graph = CodeGraph.parse(legacy, 'proj-a');
+  assert.deepEqual(
+    graph.fileSymbolSets().map((s) => s.file),
+    ['a.ts'],
+  );
+});
+
+test('loadGraphSnapshot quarantines a snapshot stamped for a different workspace, rather than serving foreign data', () => {
+  withTmpDir((dir) => {
+    const graph = new CodeGraph('proj-a');
+    graph.addFile('a.ts', 'export class Widget {}');
+    saveGraphSnapshot(graph, dir);
+    const path = graphSnapshotPath(dir);
+
+    const loaded = loadGraphSnapshot(dir, 'proj-b');
+    assert.deepEqual(loaded.allNodes(), [], 'the foreign-workspace graph must never be served');
+    assert.ok(existsSync(`${path}.corrupt`), 'the mismatched snapshot should be quarantined, not deleted');
+    assert.equal(existsSync(path), false);
+  });
+});
+
+test('loadGraphSnapshot loads a legacy (unstamped) snapshot successfully rather than discarding it', () => {
+  withTmpDir((dir) => {
+    const path = graphSnapshotPath(dir);
+    writeFileSync(
+      path,
+      JSON.stringify({
+        files: [
+          {
+            file: 'a.ts',
+            hash: 'h',
+            nodes: [{ name: 'f', kind: 'function', file: 'a.ts', line: 1, confidence: 'extracted' }],
+            edges: [],
+          },
+        ],
+      }),
+      'utf8',
+    );
+    const graph = loadGraphSnapshot(dir, 'proj-a');
+    assert.deepEqual(
+      graph.allNodes().map((n) => n.name),
+      ['f'],
+      'a legacy unstamped snapshot must still load, not be quarantined',
+    );
+    assert.equal(existsSync(`${path}.corrupt`), false, 'legacy snapshots are not corrupt — must not be quarantined');
+  });
+});
+
 test('addFileAuto skips re-extraction when content is unchanged (the incremental lever)', async () => {
   const graph = new CodeGraph();
   const first = await graph.addFileAuto('a.ts', 'export function f() {}');

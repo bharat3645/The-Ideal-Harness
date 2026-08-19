@@ -7,6 +7,7 @@
  *   mcp                start the orchestrate MCP server (stdio). Spend cap via IDEAL_HARNESS_SPEND_CAP.
  *   verify <taskId>     actually run a ledger task's verify.command and update its status
  *   retro               generate a markdown retro from the current ledger
+ *   spend reset         deliberately clear persisted spend tracking back to zero (see issue #14)
  */
 
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
@@ -15,7 +16,8 @@ import { dirname, join } from 'node:path';
 import { runCli } from '../../core/index.js';
 import { TaskLedger } from '../ledger.js';
 import { generateRetro } from '../retro.js';
-import { startOrchestrateMcp } from '../runtime/mcp.js';
+import { spendStatePath, startOrchestrateMcp } from '../runtime/mcp.js';
+import { serializeSpendState } from '../spend.js';
 import { runVerify } from '../verify.js';
 
 function ledgerPath(): string {
@@ -75,6 +77,19 @@ async function main(): Promise<number> {
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       return result.ran && result.ok ? 0 : 1;
     }
+    case 'spend': {
+      if (rest[0] !== 'reset') {
+        process.stderr.write('usage: ideal-harness-orchestrate spend reset\n');
+        return 1;
+      }
+      const path = spendStatePath();
+      mkdirSync(dirname(path), { recursive: true });
+      const tmp = `${path}.tmp`;
+      writeFileSync(tmp, serializeSpendState({ used: 0, ts: Date.now() }));
+      renameSync(tmp, path);
+      process.stderr.write(`spend tracking reset to 0 at ${path}\n`);
+      return 0;
+    }
     case 'retro': {
       const ledger = await loadLedger();
       if (ledger === null) {
@@ -92,7 +107,7 @@ async function main(): Promise<number> {
       return 0;
     }
     default:
-      process.stdout.write('usage: ideal-harness-orchestrate <mcp|verify|retro>\n');
+      process.stdout.write('usage: ideal-harness-orchestrate <mcp|verify|retro|spend reset>\n');
       return command === undefined ? 1 : 0;
   }
 }

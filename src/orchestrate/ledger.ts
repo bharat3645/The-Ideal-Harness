@@ -89,6 +89,19 @@ export class TaskLedger {
     return this.tasks.find((t) => t.status === 'pending' || t.status === 'in_progress');
   }
 
+  /**
+   * Replace this ledger's contents in place with `other`'s. Used to resync a
+   * long-lived in-memory ledger after a lock-protected reload-mutate-write
+   * cycle (see issue #17 / `decisions.md` D039) finds fresher on-disk state
+   * than this instance held — every closure already holding a reference to
+   * `this` sees the merged state immediately, with no reassignment needed.
+   */
+  loadFrom(other: TaskLedger): void {
+    this.tasks.length = 0;
+    this.tasks.push(...other.tasks);
+    this.counter = other.counter;
+  }
+
   progress(): { done: number; total: number } {
     return { done: this.tasks.filter((t) => t.status === 'done').length, total: this.tasks.length };
   }

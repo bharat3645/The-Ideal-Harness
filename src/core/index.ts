@@ -9,6 +9,7 @@
 export { readStdin, runCli } from './cli/runtime.js';
 export { createLogger, type LogFields, type Logger, type LoggerOptions, type LogLevel } from './logger.js';
 export { type Err, err, isErr, isOk, mapOk, type Ok, ok, type Result, unwrap } from './result.js';
+export { type FileLockOptions, LOCK_STALE_MS, lockPathFor, withFileLock } from './runtime/lock.js';
 export {
   asNumber,
   asString,
