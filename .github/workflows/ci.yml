@@ -10,6 +10,14 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      # max-parallel: 1 — the two legs both spawn a real headless Chrome for
+      # test/web/browse/integration.test.ts. Running them concurrently on
+      # shared GitHub-hosted runner infrastructure caused genuine resource
+      # contention: one leg's Chrome daemon missed its 15s startup budget
+      # (observed directly, 2026-08-19 — not a guess). Serializing costs wall
+      # time but removes the contention outright, without touching the
+      # daemon's timeout or any test code to paper over it.
+      max-parallel: 1
       matrix:
         # Issue #9: engines.node previously declared ">=20" but CI only ever ran 22, so tsc
         # would silently accept APIs Node 20 doesn't have. Added a Node 20 leg to check —
