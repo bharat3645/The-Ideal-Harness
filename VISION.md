@@ -367,11 +367,14 @@ Perfection here is substantially subtractive. Each refusal protects a property f
 > self-policy floor, which denies writing there even to add a read-only capability); and,
 > later the same day, episodic recall's SQLite-FTS5 tier + lexical vector rerank (§3.2,
 > D041) — via Node's own built-in `node:sqlite`, not a new dependency at all, degrading
-> cleanly to the original hand-rolled BM25 tier on Node <22.5. **Not shipped, and not
-> claimed:** Windows sandbox parity (issue #35), auto-applied compression/sandbox via the
-> hook contract (issues #3/#4) — all three need edits inside files the self-policy floor
-> protects, so ready-to-apply patches were prepared instead (`patches/`) for a human to
-> review and apply directly.
+> cleanly to the original hand-rolled BM25 tier on Node <22.5; and, in a follow-up release
+> pass the same day, auto-applied compression/sandbox via the hook contract (issues #3/#4)
+> and `vet_skill_deep`'s 3 parser bugs (issue #36) — all three needed edits inside files
+> the self-policy floor protects, so a ready-to-apply patch was prepared for each and
+> applied with explicit operator go-ahead (D043/D044), same as D025's precedent. **Not
+> shipped, and not claimed:** full Windows sandbox parity (issue #35) — a verified-working
+> process-tracking primitive shipped, but `buildSandboxCommand` still returns `ok: false`
+> on `win32`; see `decisions.md` D043 for exactly what's still open and why.
 
 Ordered by leverage-per-effort, respecting DESIGN.md's v0.2 commitments:
 

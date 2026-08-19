@@ -297,18 +297,20 @@ Tag `vX.Y.Z` to publish via CI (`.github/workflows/release.yml`, needs the `NPM_
 ## Verification
 
 - **451 unit tests** on `node:test` with zero test-framework dependencies. CI's Node
-  21/22 matrix (run [32268374860](../../actions/runs/32268374860)) shows *different*
+  21/22 matrix (run [32273064023](../../actions/runs/32273064023)) shows *different*
   skip counts per leg on purpose: Node 21 — 443 pass, 0 fail, 8 skip; Node 22 — 446 pass,
   0 fail, 5 skip. The 3-test gap is `memory`'s optional SQLite-FTS5 tier (issue #19)
   degrading exactly as designed — `node:sqlite` doesn't exist on Node 21, so those tests
   skip there and run for real on Node 22. The other skips are the
   `semgrep`/`osv-scanner` integration tests, absent from both CI runners. Locally, with
-  both binaries actually installed, those same tests run for real and 4 of them fail —
-  not flakiness: they're the real-binary integration tests from issue #7 catching 3
-  genuine bugs in `vet_skill_deep`'s parsers, tracked as issue #36.
-  `src/guard/vet/external.ts` is self-policy-protected, so this session couldn't apply
-  the fix directly — a ready-to-apply patch is in [`patches/`](./patches) instead
-  (`decisions.md` D043). Stated here rather than silently expected to pass.
+  both binaries actually installed, those same tests run for real: 445 pass, 3 fail — not
+  flakiness, those 3 specifically assert "the binary is absent" (true in CI, false on a
+  dev machine with both installed, so they correctly flip). The real-binary integration
+  tests from issue #7 that used to catch 3 genuine bugs in `vet_skill_deep`'s parsers
+  (issue #36 — path-prefixed `check_id`, unreachable `critical` severity, `env: {}`
+  breaking semgrep on Windows) now pass instead of documenting the bug — fixed and
+  reverified against real `semgrep 1.173.0`/`osv-scanner 1.9.2` (`decisions.md`
+  D043/D044).
 - Biome clean, fully type-checked.
 - CI runs biome + build + check + test + validate + a skill-threat self-scan on every change.
 - **Dogfooded.** The substrate validates its own repo; the code-graph indexes its own source.

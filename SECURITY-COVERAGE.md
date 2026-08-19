@@ -89,7 +89,7 @@ identity model was built and secured (none exists, by design).
 *Compromised dependencies in frameworks, models, and tool integrations enable code
 execution.*
 
-**Verdict: Partial** — real mechanism, one confirmed detection-fidelity gap.
+**Verdict: Full** — real mechanism, no known material gap.
 
 Two independent mechanisms, not one:
 
@@ -107,21 +107,24 @@ Two independent mechanisms, not one:
    `available: false` rather than failing hard when absent. This directly targets exactly
    the risk this ASI item names for anything installed *into* the harness.
 
-**The gap, found by this project's own testing, not hidden:** `ROADMAP.md` #7 shipped real
-integration tests against the actual `semgrep`/`osv-scanner` binaries (previously exercised
-only via their absence path) — and they immediately found real bugs in the parsers reading
-those binaries' output, tracked as **issue #36**. The one that matters for this item's
-verdict: `parseOsvOutput`'s severity classification does a substring match for the literal
-word `"critical"`, but real `osv-scanner` output encodes severity as a CVSS vector string
-(e.g. `CVSS:3.1/AV:N/...`) that never contains that word — so a genuinely critical
-dependency vulnerability can never be classified above `'high'` by this mechanism. (A second
-bug — `parseSemgrepOutput`'s `check_id` is path-prefixed rather than the bare rule id — is a
-tracking/leakage defect, not a detection-fidelity one.) Both bugs are in
-`src/guard/vet/external.ts`, which is self-policy-protected, so this session could document
-them precisely with failing tests but not fix them. Per this document's own definition of
-"full" ("no known material gap"), a confirmed severity-ceiling bug in the vulnerability
-scanner itself is exactly that — hence the downgrade from this table's earlier draft, rather
-than burying it as a footnote while still claiming "Full."
+**A gap was found by this project's own testing, not hidden — and is now fixed.**
+`ROADMAP.md` #7 shipped real integration tests against the actual `semgrep`/`osv-scanner`
+binaries (previously exercised only via their absence path) — and they immediately found
+real bugs in the parsers reading those binaries' output, tracked as **issue #36**. The one
+that mattered for this item's verdict: `parseOsvOutput`'s severity classification did a
+substring match for the literal word `"critical"`, but real `osv-scanner` output encodes
+severity as a CVSS vector string (e.g. `CVSS:3.1/AV:N/...`) that never contains that word —
+so a genuinely critical dependency vulnerability could never be classified above `'high'`
+by this mechanism. (A second bug — `parseSemgrepOutput`'s `check_id` was path-prefixed
+rather than the bare rule id — was a tracking/leakage defect, not a detection-fidelity one.)
+Both bugs lived in `src/guard/vet/external.ts`, which is self-policy-protected — the
+session that found them could document them precisely with failing tests but not fix them
+directly, so a ready-to-apply patch was prepared instead. That patch has since been applied
+with explicit operator go-ahead and reverified against the real binaries (`decisions.md`
+D043/D044): `parseOsvOutput` now computes a real CVSS 3.1 Base Score and correctly reaches
+`critical`, and `check_id` is reduced to the bare rule id. Per this document's own
+definition of "full" ("no known material gap"), with the confirmed gap closed and
+reverified — not just claimed fixed — the verdict returns to "Full."
 
 ## ASI05 — Unexpected Code Execution
 
@@ -145,7 +148,13 @@ machines"), and the current behavior is to run **unsandboxed with honest reporti
 (`sandboxed: false`) rather than either silently claiming protection or refusing to run at
 all. As of this document, a competing project (DeepSeek Harness) ships a working Windows
 ACL enforcement path that this project doesn't — see **issue #35** ("Sandbox hardening:
-close the Windows gap in `guard`'s sandbox"), opened specifically to close this.
+close the Windows gap in `guard`'s sandbox"), opened specifically to close this. Partial
+progress landed 2026-08-19: `windowsJobObjectSupported()` in `src/guard/sandbox.ts` is a
+verified-working Windows process-tracking primitive (Job Objects, no elevation needed), but
+`buildSandboxCommand` still returns `ok: false` on `win32` — the primitive isn't wired into
+the enforcement path yet, on purpose, because doing so safely first needs a real fix for a
+confirmed stdout-relay bug (see the module's own doc comment and `decisions.md` D043). The
+verdict here stays "Partial" until that's closed.
 
 ## ASI06 — Memory and Context Poisoning
 
@@ -277,22 +286,22 @@ rather than something the floor itself claims to do — but it means "containmen
 | ASI01 | Agent Goal Hijack | Partial | `src/guard/injection.ts`, `scrub.ts` |
 | ASI02 | Tool Misuse and Exploitation | Partial | `src/guard/policy/defaults.ts` |
 | ASI03 | Identity and Privilege Abuse | Full (single-operator scope) | `src/guard/leases.ts`, `secrets.ts` |
-| ASI04 | Agentic Supply Chain Vulnerabilities | Partial — osv-scanner severity ceiling bug (#36) | zero-dep architecture + `src/guard/vet/` |
-| ASI05 | Unexpected Code Execution | Partial — Windows gap tracked (#35) | `src/guard/sandbox.ts`, `exec.ts` |
+| ASI04 | Agentic Supply Chain Vulnerabilities | Full | zero-dep architecture + `src/guard/vet/` |
+| ASI05 | Unexpected Code Execution | Partial — Windows gap tracked (#35), process-tracking primitive shipped but not wired in | `src/guard/sandbox.ts`, `exec.ts` |
 | ASI06 | Memory and Context Poisoning | Partial | `src/memory/curator.ts` |
 | ASI07 | Insecure Inter-Agent Communication | Out of scope (architectural) | n/a — no inter-agent protocol exists |
 | ASI08 | Cascading Failures | Partial — no cross-session cascade containment | `loopguard.ts`, `spend.ts`, `worktree.ts` |
 | ASI09 | Human-Agent Trust Exploitation | Partial | deterministic classification, explain-mode |
 | ASI10 | Rogue Agents | Partial | the entire floor (containment, not detection) |
 
-Cross-referenced open work: issue #35 (Windows sandbox parity), issue #36 (`vet_skill_deep`
-parser bugs, including the osv-scanner severity-ceiling issue behind ASI04's downgrade
-above). #7, #14, #15, #17, and #19 — all cited in earlier drafts of this table as open gaps
-— shipped during the 2026-08-19 session and are closed; this table was revised the same day
-to stop citing them as open. Cross-referenced decisions: `decisions.md` D005 (soft floor by
-default), D007 (zero deps), D011 (sandboxed verification, Windows tradeoff), D016 (leases
-CLI-only), D037 (spend durability), D039 (concurrency locking), D041 (episodic FTS5 +
-lexical vector rerank).
+Cross-referenced open work: issue #35 (Windows sandbox parity — partially shipped, see
+ASI05 above; the process-tracking primitive is real, the enforcement wiring is not).
+#7, #14, #15, #17, #19, and #36 — all cited in earlier drafts of this table as open gaps —
+have since shipped and are closed; this table was revised 2026-08-19 to stop citing them as
+open. Cross-referenced decisions: `decisions.md` D005 (soft floor by default), D007 (zero
+deps), D011 (sandboxed verification, Windows tradeoff), D016 (leases CLI-only), D037 (spend
+durability), D039 (concurrency locking), D041 (episodic FTS5 + lexical vector rerank), D043/
+D044 (the four self-policy-blocked patches, prepared then applied).
 
 *Compiled 2026-08-19 against OWASP's Agentic Applications Top 10, 2026 edition
 (ASI01–ASI10, published 2025-12-09 by the OWASP GenAI Security Project). Re-verify against
