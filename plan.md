@@ -127,7 +127,7 @@ verified); README + CLAUDE.md carry the honest display-only note.
 | Step | Command |
 |---|---|
 | Build (single package, post-flatten) | `corepack pnpm build` |
-| Tests (370 across the 6 modules as of 2026-08-19, was 130 across 5 packages when this table was written) | `corepack pnpm test` |
+| Tests (434 across the 6 modules as of 2026-08-19, was 130 across 5 packages when this table was written) | `corepack pnpm test` |
 | Substrate self-validate | `corepack pnpm validate` |
 | Lint/format | `corepack pnpm biome` |
 | Phase 2 hook smoke test | pipe fake `{"transcript_path":…,"session_id":"t"}` into `node packages/compress/hooks/statusline.mjs` |

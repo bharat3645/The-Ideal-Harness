@@ -199,7 +199,7 @@ granted should fail loudly and get a rule added, never fall back to guessing.
 - **Enforce below the model.** Every safety and scope rule is deterministic code — a hook, a gate, a scanner — never a polite request in a prompt.
 - **Zero overlap.** One chosen mechanism per capability; the rejected alternatives are documented, not deleted in silence.
 - **Honest by default.** A 3.4% compression number and a v0.1 scope note are features. The metrics we cannot fake are the evidence for the ones you cannot easily check.
-- **Standards-aligned.** 12-Factor Agents compliant; aligned with published context-engineering and long-running-harness guidance and OWASP LLM06 (excessive agency) — see [`SECURITY-COVERAGE.md`](./SECURITY-COVERAGE.md) for the full OWASP Agentic Applications Top 10 (2026) coverage table (4 full, 5 partial, 1 out of scope — gaps named, not hidden).
+- **Standards-aligned.** 12-Factor Agents compliant; aligned with published context-engineering and long-running-harness guidance and OWASP LLM06 (excessive agency) — see [`SECURITY-COVERAGE.md`](./SECURITY-COVERAGE.md) for the full OWASP Agentic Applications Top 10 (2026) coverage table (1 full, 8 partial, 1 out of scope — gaps named, not hidden).
 
 ## Architecture
 

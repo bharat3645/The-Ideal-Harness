@@ -6,7 +6,7 @@ This document maps all ten items of the **OWASP Top 10 for Agentic Applications,
 edition** (ASI01–ASI10, published by the OWASP GenAI Security Project, 2025-12-09) against
 what's actually shipped in this repo, with a file path behind every claim.
 
-**Tally: 4 full, 5 partial, 1 out of scope.** No item is claimed "full" without a specific
+**Tally: 1 full, 8 partial, 1 out of scope.** No item is claimed "full" without a specific
 mechanism behind it, and no gap is hidden. A table claiming 10/10 would be checked against
 the source in about the same time it took to write this one — Microsoft's Agent Governance
 Toolkit already makes that exact claim, backed by a seven-package enterprise product; this
@@ -89,7 +89,7 @@ identity model was built and secured (none exists, by design).
 *Compromised dependencies in frameworks, models, and tool integrations enable code
 execution.*
 
-**Verdict: Full.**
+**Verdict: Partial** — real mechanism, one confirmed detection-fidelity gap.
 
 Two independent mechanisms, not one:
 
@@ -107,10 +107,21 @@ Two independent mechanisms, not one:
    `available: false` rather than failing hard when absent. This directly targets exactly
    the risk this ASI item names for anything installed *into* the harness.
 
-**Honest caveat, not a gap in this item specifically:** the semgrep/osv-scanner integration
-is exercised in CI only via its absence path (2 tests currently skip because neither binary
-is installed in the test environment) — `ROADMAP.md` #7 tracks adding real integration
-coverage against the actual binaries.
+**The gap, found by this project's own testing, not hidden:** `ROADMAP.md` #7 shipped real
+integration tests against the actual `semgrep`/`osv-scanner` binaries (previously exercised
+only via their absence path) — and they immediately found real bugs in the parsers reading
+those binaries' output, tracked as **issue #36**. The one that matters for this item's
+verdict: `parseOsvOutput`'s severity classification does a substring match for the literal
+word `"critical"`, but real `osv-scanner` output encodes severity as a CVSS vector string
+(e.g. `CVSS:3.1/AV:N/...`) that never contains that word — so a genuinely critical
+dependency vulnerability can never be classified above `'high'` by this mechanism. (A second
+bug — `parseSemgrepOutput`'s `check_id` is path-prefixed rather than the bare rule id — is a
+tracking/leakage defect, not a detection-fidelity one.) Both bugs are in
+`src/guard/vet/external.ts`, which is self-policy-protected, so this session could document
+them precisely with failing tests but not fix them. Per this document's own definition of
+"full" ("no known material gap"), a confirmed severity-ceiling bug in the vulnerability
+scanner itself is exactly that — hence the downgrade from this table's earlier draft, rather
+than burying it as a footnote while still claiming "Full."
 
 ## ASI05 — Unexpected Code Execution
 
@@ -157,9 +168,8 @@ independently validate the *content of tool results themselves* before they beco
 references it, even though `ASI01`'s injection-fencing already flags known injection
 patterns in that same content). There's also no anomaly detection over the episodic store
 itself (a burst of similar false observations landing in one session isn't specifically
-flagged as suspicious). `ROADMAP.md` #15 (episodic store unbounded growth) and #19 (no
-vector/hybrid rerank) are adjacent quality gaps, not poisoning defenses, but worth noting
-they're open too.
+flagged as suspicious). `ROADMAP.md` #19 (no vector/hybrid rerank for episodic recall) is an
+adjacent quality gap, not a poisoning defense, but worth noting it's open too.
 
 ## ASI07 — Insecure Inter-Agent Communication
 
@@ -175,11 +185,13 @@ a message bus this project defines, authenticates, or could compromise independe
 Claude Code itself. There is no fleet of independently-addressable agents passing signed or
 unsigned messages to each other that `guard` would need to authenticate.
 
-**Adjacent, not equivalent:** `ROADMAP.md` #17 ("no concurrency control on any persisted
-state — two sessions silently clobber each other") is a real, open, tracked bug about
-*concurrent sessions racing on shared files* (the ledger, the journal, the memory graph) —
-a data-integrity problem, not spoofed/replayed/unauthenticated inter-agent messaging. Worth
-knowing the two are different risks even though they sound adjacent.
+**Adjacent, not equivalent, and now closed:** `ROADMAP.md` #17 ("no concurrency control on
+any persisted state — two sessions silently clobber each other") was a real bug about
+*concurrent sessions racing on shared files* (the ledger, the journal, the memory graph) — a
+data-integrity problem, not spoofed/replayed/unauthenticated inter-agent messaging. It
+shipped a fix (`src/core/runtime/lock.ts`, `decisions.md` D039) and is no longer open. Noted
+here only because the two risks sound adjacent enough to be worth distinguishing, not
+because either is still a live gap for this item.
 
 ## ASI08 — Cascading Failures
 
@@ -196,12 +208,13 @@ further work once exceeded; `src/orchestrate/worktree.ts`'s fanned-out worktrees
 (`.ideal-harness/worktrees/<id>`) isolate concurrent implementer tasks from each other's
 filesystem state so one task's failure doesn't corrupt a sibling's.
 
-**The gap:** `SpendGovernor` is in-memory only — `ROADMAP.md` #14 confirms it resets to zero
-on every MCP server restart, meaning a spend cap does not survive the exact failure
-scenario (a crash/restart mid-runaway) where it would matter most. And none of these three
-mechanisms addresses failure propagating *between* separate projects/sessions — each is
-scoped to bounding one session's own runaway behavior, not a distributed cascade across
-systems this project doesn't control.
+**The gap:** none of these three mechanisms addresses failure propagating *between*
+separate projects/sessions — each is scoped to bounding one session's own runaway behavior,
+not a distributed cascade across systems this project doesn't control. (The one
+mechanism-specific gap that used to sit here — `SpendGovernor` losing its counter on every
+MCP server restart, so a cap didn't survive the exact crash/restart scenario where it would
+matter most — is closed: spend state now persists to disk and restores fail-closed on
+corrupt/missing state, `ROADMAP.md` #14, `decisions.md` D037.)
 
 ## ASI09 — Human-Agent Trust Exploitation
 
@@ -263,19 +276,22 @@ rather than something the floor itself claims to do — but it means "containmen
 | ASI01 | Agent Goal Hijack | Partial | `src/guard/injection.ts`, `scrub.ts` |
 | ASI02 | Tool Misuse and Exploitation | Partial | `src/guard/policy/defaults.ts` |
 | ASI03 | Identity and Privilege Abuse | Full (single-operator scope) | `src/guard/leases.ts`, `secrets.ts` |
-| ASI04 | Agentic Supply Chain Vulnerabilities | Full | zero-dep architecture + `src/guard/vet/` |
+| ASI04 | Agentic Supply Chain Vulnerabilities | Partial — osv-scanner severity ceiling bug (#36) | zero-dep architecture + `src/guard/vet/` |
 | ASI05 | Unexpected Code Execution | Partial — Windows gap tracked (#35) | `src/guard/sandbox.ts`, `exec.ts` |
 | ASI06 | Memory and Context Poisoning | Partial | `src/memory/curator.ts` |
 | ASI07 | Insecure Inter-Agent Communication | Out of scope (architectural) | n/a — no inter-agent protocol exists |
-| ASI08 | Cascading Failures | Partial — spend cap non-durable (#14) | `loopguard.ts`, `spend.ts`, `worktree.ts` |
+| ASI08 | Cascading Failures | Partial — no cross-session cascade containment | `loopguard.ts`, `spend.ts`, `worktree.ts` |
 | ASI09 | Human-Agent Trust Exploitation | Partial | deterministic classification, explain-mode |
 | ASI10 | Rogue Agents | Partial | the entire floor (containment, not detection) |
 
-Cross-referenced open work: `ROADMAP.md` #7 (semgrep/osv-scanner integration tests), #14
-(spend governor durability), #15/#19 (episodic store growth/rerank), #17 (concurrency
-control), issue #35 (Windows sandbox parity). Cross-referenced decisions: `decisions.md`
-D005 (soft floor by default), D007 (zero deps), D011 (sandboxed verification, Windows
-tradeoff), D016 (leases CLI-only).
+Cross-referenced open work: `ROADMAP.md` #19 (no vector/hybrid rerank for episodic
+recall), issue #35 (Windows sandbox parity), issue #36 (`vet_skill_deep` parser bugs,
+including the osv-scanner severity-ceiling issue behind ASI04's downgrade above). #7, #14,
+#15, and #17 — all cited in earlier drafts of this table as open gaps — shipped during the
+2026-08-19 session and are closed; this table was revised the same day to stop citing them
+as open. Cross-referenced decisions: `decisions.md` D005 (soft floor by default), D007
+(zero deps), D011 (sandboxed verification, Windows tradeoff), D016 (leases CLI-only), D037
+(spend durability), D039 (concurrency locking).
 
 *Compiled 2026-08-19 against OWASP's Agentic Applications Top 10, 2026 edition
 (ASI01–ASI10, published 2025-12-09 by the OWASP GenAI Security Project). Re-verify against

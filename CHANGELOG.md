@@ -38,7 +38,7 @@ cases exercising real, confirmed bugs in `src/guard/vet/external.ts` (issue #36)
   because guard's own self-policy floor denies writing anywhere under `src/guard/`, new
   files included.
 - **security posture** — published `SECURITY-COVERAGE.md`, an honest OWASP Agentic
-  Applications Top 10 (2026) coverage table: 4 full, 5 partial, 1 out of scope, every
+  Applications Top 10 (2026) coverage table: 1 full, 8 partial, 1 out of scope, every
   verdict cited to a real file (#20). Opened #35 (Windows sandbox parity — no code written,
   self-policy-protected).
 - **housekeeping** — retired 11 stale GitHub issues (#21-#32) from a since-rejected v2.1-v2.3

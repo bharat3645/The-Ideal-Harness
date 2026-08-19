@@ -76,8 +76,9 @@ module (anti-overlap holds).
 ### 3.1 `compress` → the context engine
 
 Exists: deterministic tool-result compression (JSON sampling, log RLE, stack collapse),
-CCR lossless retrieval, token gate, caveman output mode (token-compression axis) + focus output
-mode (structure/legibility axis — the two compose), context-window statusline.
+CCR retrieval (lossless within a byte cap — 50 MiB default, operator-tunable, LRU-evicted
+beyond it, `decisions.md` D035), token gate, caveman output mode (token-compression axis) +
+focus output mode (structure/legibility axis — the two compose), context-window statusline.
 
 Could become:
 
@@ -102,8 +103,8 @@ Could become:
 ### 3.2 `memory` → the knowledge engine
 
 Exists: structural code-graph — regex tier by default, zero deps; an **optional** tree-sitter
-tier (TS/JS/TSX/Python, degrading per-file to regex on any parse failure) when the operator
-installs `web-tree-sitter` + grammar packages — with token-budgeted subgraph retrieval, now
+tier (TS/TSX/JS/Python/Java/Kotlin/Go/Rust, degrading per-file to regex on any parse failure)
+when the operator installs `web-tree-sitter` + grammar packages — with token-budgeted subgraph retrieval, now
 persisted (`<root>/.ideal-harness/memory/graph.json`) and incrementally re-indexed (only changed
 files are re-extracted); episodic BM25 store; curator (claims reconciled against tool evidence);
 workspace isolation by construction. The drift-guard is sharper for it (§3.3): a structural
@@ -117,9 +118,10 @@ consented sharing (the Obsidian bridge, CLI-only export/import — decisions.md 
 
 Could become:
 
-- **Tree-sitter tier on by default, more languages** — today's tier is optional (a devDependency
-  the operator adds) and covers TS/JS/TSX/Python; making it a default install and widening
-  language coverage (Go/Rust/Java) is the next step. LSP/SCIP remain further out.
+- **Tree-sitter tier on by default, wider still** — today's tier is optional (a devDependency
+  the operator adds) and covers TS/TSX/JS/Python/Java/Kotlin/Go/Rust (Go and Rust shipped
+  2026-08-19, issues #1/#2); making it a default install is the next step. LSP/SCIP remain
+  further out.
 - **Temporal memory.** Git-aware: *when* did X change, what did the file look like at
   the decision point. Answers "why is this here" — the question agents ask most.
 - **Hybrid retrieval** — BM25 + int8-vector RRF rerank (DESIGN.md L2, deferred).
@@ -345,6 +347,22 @@ Perfection here is substantially subtractive. Each refusal protects a property f
 > model routing. An **external comparison review** (2026-08-11, recorded in `decisions.md` D021)
 > independently confirmed the harness's anti-goals and identified the decision ledger as the one
 > genuinely high-value gap remaining — closed the same day.
+>
+> Shipped 2026-08-19 (a backlog-clearing pass — v0.3.0, see CHANGELOG): the DNS-rebinding gap
+> in `web`'s SSRF guard closed via connection pinning (D038); Go and Rust added to the
+> tree-sitter tier (§3.2, now 8 languages); workspace-stamped structural graph snapshots;
+> durable spend tracking that survives an MCP server restart, fail-closed (D037); a shared,
+> zero-dependency file lock closing the concurrency gap across every persisted store in
+> `memory` and `orchestrate` (D039); CCR's byte cap + LRU eviction (D035); real
+> semgrep/osv-scanner integration tests, which immediately found 3 genuine parser bugs rather
+> than a clean pass — disclosed as issue #36, not hidden; the OWASP Agentic Applications Top 10
+> coverage table (`SECURITY-COVERAGE.md`); and an opt-in OTLP span exporter for the guard
+> journal (`scripts/otel-export.mjs`, D040 — kept outside `src/guard/` by that module's own
+> self-policy floor, which denies writing there even to add a read-only capability). **Not
+> shipped, and not claimed:** SQLite-FTS5/vector hybrid memory (issue #19, blocked on a
+> dependency decision this project's zero-dep guarantee hasn't cleared yet), Windows sandbox
+> parity (issue #35), auto-applied compression/sandbox via the hook contract (issues #3/#4 —
+> both need edits inside files the self-policy floor protects, so they wait on a human).
 
 Ordered by leverage-per-effort, respecting DESIGN.md's v0.2 commitments:
 
