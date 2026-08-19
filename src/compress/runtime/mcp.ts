@@ -42,8 +42,26 @@ export function buildCompressTools(store: CcrStore): McpTool[] {
   ];
 }
 
+/** Resolve the CCR byte cap from the env, ignoring (with a loud warning) invalid values. */
+function resolveCcrCapBytes(): number | undefined {
+  const capRaw = process.env.IDEAL_HARNESS_CCR_CAP_BYTES;
+  if (capRaw === undefined || capRaw.length === 0) {
+    return undefined; // let CcrStore use its own default
+  }
+  const n = Number(capRaw);
+  if (!Number.isFinite(n) || n <= 0) {
+    // Never silently ignore a typo — warn and fall back to the built-in default.
+    process.stderr.write(
+      `ideal-harness-compress: ignoring invalid IDEAL_HARNESS_CCR_CAP_BYTES="${capRaw}" (using the default cap)\n`,
+    );
+    return undefined;
+  }
+  return n;
+}
+
 export function startCompressMcp(): Promise<void> {
-  const store = new CcrStore();
+  const capBytes = resolveCcrCapBytes();
+  const store = capBytes === undefined ? new CcrStore() : new CcrStore(capBytes);
   return createMcpServer({
     name: 'ideal-harness-compress',
     version: HARNESS_VERSION,
