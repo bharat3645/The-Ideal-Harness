@@ -83,7 +83,11 @@ All of these are real contributions and all of them are wanted:
 Stated so nobody spends a weekend on something that will be declined:
 
 - **Multi-backend runtime.** Portability is two honest tiers, not a universal abstraction — see `decisions.md` D013.
-- **Browser automation in `web`.** Deliberately `fetch()`-only — D012.
+- **Bundling or downloading a browser.** The `/browse` daemon (`src/web/browse/`, shipped
+  2026-08-13, `decisions.md` D034 — superseding D012's earlier fetch-only stance) depends
+  on the operator's own installed Chrome/Chromium/Edge, found via `CHROME_PATH` or
+  well-known per-platform paths, never downloaded or vendored. That scope boundary stays;
+  the "no browser automation at all" boundary it replaced does not.
 - **A hosted or managed policy service.** Team policy is a git-tracked, PR-reviewed file on purpose — D014.
 - **New floor modes, profiles or environment variables.** There are already five ways to loosen the floor. New capability is welcome; new knobs almost never are.
 - **A seventh module.** `core`, `guard`, `compress`, `memory`, `orchestrate`, `web` are the
