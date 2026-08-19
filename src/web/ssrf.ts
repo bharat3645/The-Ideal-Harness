@@ -25,15 +25,14 @@
  *     must use `redirect: 'manual'` and re-validate each hop through this module
  *     (implemented in `fetch.ts`/`docs.ts`, not here)
  *
- * What this does NOT close (stated honestly, not hidden):
- *   - **DNS rebinding.** There is a time-of-check-to-time-of-use gap between this
- *     module's `dns.lookup` and the actual TCP connect `fetch()` performs internally
- *     — an attacker controlling DNS for the target hostname could serve a public IP
- *     for the check and a private IP moments later for the real connection. Closing
- *     this fully requires pinning the validated IP into the actual connection (a
- *     custom low-level dispatcher/agent), which this module does not attempt, to keep
- *     the `web` module dependency-free and its behavior easy to audit. This is a real,
- *     residual risk for a sufficiently motivated attacker who can also control DNS.
+ * DNS rebinding (ROADMAP.md #5, supersedes `decisions.md` D026's stated gap): CLOSED.
+ * `checkUrlSafety` now returns the exact validated address (`pinnedIp`) alongside its
+ * verdict, and callers (`fetch.ts`) connect to THAT address directly via
+ * `pinned-request.ts` instead of letting `fetch()` re-resolve the hostname at connect
+ * time — there is no longer a gap between "the address that was checked" and "the
+ * address that gets connected to," because they're the same value threaded through,
+ * not two independent DNS lookups. See `pinned-request.ts`'s own docblock for why this
+ * needed zero new dependencies.
  */
 
 import { lookup } from 'node:dns/promises';
@@ -42,6 +41,16 @@ import { isIP } from 'node:net';
 export interface SsrfCheckResult {
   readonly safe: boolean;
   readonly reason?: string;
+  /**
+   * The exact address this verdict was computed against — present whenever `safe` is
+   * true. Callers MUST connect to this address directly (see `pinned-request.ts`)
+   * rather than re-resolving the hostname, or the DNS-rebinding gap this field exists
+   * to close reopens. For a literal IP URL, this is that same address (no DNS
+   * involved, pinning is a no-op but harmless). For a hostname, this is one specific
+   * address from the resolved set that was validated safe — `resolved[0]`,
+   * deterministically, not "whichever the runtime happens to connect to."
+   */
+  readonly pinnedIp?: string;
 }
 
 function isPrivateOrReservedIpv4(ip: string): boolean {
@@ -65,13 +74,30 @@ function isPrivateOrReservedIpv4(ip: string): boolean {
   return false;
 }
 
+/** Reassemble two 16-bit hex groups (as produced by the IPv6 mixed-notation serializer) into a dotted-quad. */
+function hexPairToIpv4(hi: string, lo: string): string {
+  const h = Number.parseInt(hi, 16);
+  const l = Number.parseInt(lo, 16);
+  return `${(h >> 8) & 0xff}.${h & 0xff}.${(l >> 8) & 0xff}.${l & 0xff}`;
+}
+
 function isPrivateOrReservedIpv6(ip: string): boolean {
   const lower = ip.toLowerCase();
   if (lower === '::1' || lower === '::') return true; // loopback / unspecified
   if (lower.startsWith('fc') || lower.startsWith('fd')) return true; // unique local fc00::/7
   if (/^fe[89ab]/.test(lower)) return true; // link-local fe80::/10
-  const mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped?.[1] !== undefined) return isPrivateOrReservedIpv4(mapped[1]);
+  const dottedMapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (dottedMapped?.[1] !== undefined) return isPrivateOrReservedIpv4(dottedMapped[1]);
+  // The WHATWG URL parser's IPv6 serializer never preserves dotted-decimal notation for
+  // an IPv4-mapped address: new URL('http://[::ffff:127.0.0.1]/').hostname comes back as
+  // "[::ffff:7f00:1]" -- the same 32 bits, compressed hex. A hostname reaching this
+  // function via checkUrlSafety needs that form recognized too, not just the
+  // dotted-decimal form isPrivateOrReservedIp() also accepts when called directly with a
+  // literal string. See ROADMAP.md #11.
+  const hexMapped = lower.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (hexMapped?.[1] !== undefined && hexMapped[2] !== undefined) {
+    return isPrivateOrReservedIpv4(hexPairToIpv4(hexMapped[1], hexMapped[2]));
+  }
   return false;
 }
 
@@ -102,12 +128,19 @@ export async function checkUrlSafety(url: URL, lookupFn: DnsLookupFn = lookup): 
   if (LOCALHOST_HOSTNAME.test(hostname)) {
     return { safe: false, reason: `refuses to fetch localhost ("${hostname}")` };
   }
-  const literalVersion = isIP(hostname);
+  // The WHATWG URL parser keeps brackets on an IPv6 literal's hostname (e.g. "[::1]"),
+  // but net.isIP() rejects bracketed input outright and returns 0 -- without stripping
+  // them first, a bracketed IPv6 literal would miss the literal-IP fast path below and
+  // fall through to a DNS lookup that can only fail, misreporting the block as a DNS
+  // failure instead of a private/reserved IP literal (and blocking legitimate public
+  // IPv6 literals for the wrong reason). See ROADMAP.md #11.
+  const bareHostname = hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
+  const literalVersion = isIP(bareHostname);
   if (literalVersion !== 0) {
-    if (isPrivateOrReservedIp(hostname)) {
+    if (isPrivateOrReservedIp(bareHostname)) {
       return { safe: false, reason: `refuses to fetch a private/reserved IP literal ("${hostname}")` };
     }
-    return { safe: true };
+    return { safe: true, pinnedIp: bareHostname };
   }
   let resolved: readonly { address: string }[];
   try {
@@ -125,5 +158,11 @@ export async function checkUrlSafety(url: URL, lookupFn: DnsLookupFn = lookup): 
       reason: `"${hostname}" resolves to a private/reserved address (${privateHit.address})`,
     };
   }
-  return { safe: true };
+  // Pin to the FIRST resolved address, deterministically — not "whichever fetch()
+  // would have picked," since the whole point is one specific, already-validated
+  // address flowing straight into the connection with no second resolution.
+  // `resolved[0]` is guaranteed to exist: the `resolved.length === 0` case already
+  // returned above.
+  const first = resolved[0] as { address: string };
+  return { safe: true, pinnedIp: first.address };
 }

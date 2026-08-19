@@ -20,6 +20,7 @@
 
 import type { PolicyDecision, PolicyRule } from '../guard/index.js';
 import { gateWebFetch } from './gate.js';
+import { pinnedFetch } from './pinned-request.js';
 import { checkUrlSafety } from './ssrf.js';
 
 export interface FetchPageOptions {
@@ -110,9 +111,13 @@ function extractTitle(html: string): string | undefined {
  * Fetch a URL and extract readable text. Policy-gated the same as the native
  * WebFetch tool (see gate.ts) — refuses (ran:false) unless the decision is an
  * explicit allow. Every hop (the initial URL and every redirect target) is checked
- * by the SSRF guard (ssrf.ts) before being fetched — `redirect: 'manual'` plus a
- * hand-rolled redirect loop, so a redirect to an internal address can't bypass the
- * check the way `redirect: 'follow'` would let it. Never throws.
+ * by the SSRF guard (ssrf.ts) before being fetched, and the connection is made via
+ * `pinned-request.ts` to the EXACT address that check validated — never a fresh
+ * `fetch()` call that would let the runtime re-resolve DNS and reopen the
+ * rebinding gap `checkUrlSafety`'s `pinnedIp` exists to close. A hand-rolled
+ * redirect loop (rather than `redirect: 'follow'`) re-runs both the check and the
+ * pin on every hop, so a redirect to an internal address can't bypass either. Never
+ * throws.
  */
 export async function fetchPage(url: string, options: FetchPageOptions = {}): Promise<FetchPageResult> {
   const decision = gateWebFetch(url, options.policyTiers);
@@ -138,14 +143,20 @@ export async function fetchPage(url: string, options: FetchPageOptions = {}): Pr
     let current = parsed;
     for (let hop = 0; ; hop += 1) {
       const safety = await checkUrlSafety(current);
-      if (!safety.safe) {
-        return { ok: false, ran: hop > 0, url, error: `blocked by SSRF guard: ${safety.reason}`, decision };
+      if (!safety.safe || safety.pinnedIp === undefined) {
+        return {
+          ok: false,
+          ran: hop > 0,
+          url,
+          error: `blocked by SSRF guard: ${safety.reason ?? 'no validated address to pin the connection to'}`,
+          decision,
+        };
       }
       if (hop > MAX_REDIRECTS) {
         return { ok: false, ran: true, url, error: `too many redirects (>${MAX_REDIRECTS})`, decision };
       }
 
-      const response = await fetch(current, { signal: controller.signal, redirect: 'manual' });
+      const response = await pinnedFetch(current, safety.pinnedIp, { signal: controller.signal, maxBytes });
 
       if (response.status >= 300 && response.status < 400) {
         const location = response.headers.get('location');
