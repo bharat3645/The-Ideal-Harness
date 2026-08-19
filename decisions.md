@@ -1262,3 +1262,65 @@ never deleted or edited to look like it always said the new thing.
   is exercised indirectly (the full suite's existing load/save tests all still pass
   against the changed code path) but the race window itself is not directly proven
   closed by a test, only by inspection.
+
+## D040 — OTel export lives in `scripts/`, not `src/guard/`: hand-rolled OTLP/HTTP JSON, opt-in, zero new dependencies
+- **Date:** 2026-08-19
+- **Status:** decided, shipped
+- **Decision:** `ROADMAP.md` #18 asked for the guard decision journal to reach a
+  standard observability backend (Langfuse, Phoenix, Datadog, an OTel collector) so an
+  operator sees agent decisions alongside the rest of their telemetry instead of having
+  to build the bridge themselves. The issue's own text named the dependency question as
+  "the whole design problem" and suggested three options; **Option 1 was taken**: emit
+  OTLP over HTTP by hand with stdlib `fetch` and `node:crypto` only, no OTel SDK, no new
+  dependency of any kind — the zero-runtime-dependency guarantee (D007) is unaffected,
+  not traded off. New `scripts/otel-export.mjs` reads `.ideal-harness/guard-journal.jsonl`
+  via `dist/guard`'s already-published `parseJournal`, maps each entry onto one OTLP
+  span (`resourceSpans[].scopeSpans[].spans[]`, OTLP/HTTP JSON wire shape), and either
+  POSTs to `OTEL_EXPORTER_OTLP_ENDPOINT`/`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` (the
+  standard OTel env-var names, so it composes with any existing collector config) or, if
+  neither is set, writes the same payload to a local JSON file a collector can tail —
+  option 3 from the issue, kept as the zero-setup fallback rather than dropped.
+- **Why `scripts/`, not a new `guard` MCP tool as the issue sketched it:** the issue
+  named `src/guard/journal.ts` as "the emit point," but guard's own self-policy floor
+  (`src/guard/policy/defaults.ts`'s `SELF_POLICY_PATTERN`) denies `Edit`/`Write` to
+  *anything* under `src/guard/` — the whole module, not just the policy files — including
+  a brand-new file that adds a read-only capability rather than changing enforcement.
+  That protection is deliberate (D-numbered self-policy entries throughout this file) and
+  is not something this session can or should route around. `scripts/report.mjs` and
+  `scripts/doctor.mjs` already establish the exact needed pattern — read a module's
+  published `dist/` output like any Tier-2 consumer, live outside the module, without
+  inverting `core`'s zero-deps rule — so the exporter follows it rather than inventing a
+  fourth. `DESIGN.md §7`'s historical note already records the same call once before, at
+  a coarser grain: a full `L8` OTel-tracing module was scoped out in favor of the static
+  `report.mjs` script for the same "stay lightweight" reason this decision restates.
+- **No GenAI semantic-convention mapping, stated plainly per the issue's own instruction:**
+  OTel's `gen_ai.*` semantic conventions describe model-inference calls (system, request
+  model, token usage) — a guard decision is a tool-permission check, not an inference
+  call, so none of those fields apply. Every span attribute instead lives under a
+  `ideal_harness.*` namespace (`tool`, `action`, `rule_id`, `mode`, `softened`,
+  `subject`) rather than being forced into a convention that doesn't fit the data.
+- **Redaction carries through by construction, not by re-implementation:** the exporter
+  never reads raw tool input — it only re-serializes `entry.subject`, which
+  `buildJournalEntry` in `journal.ts` already redacted and truncated at journal-write
+  time. There is no second redaction pass to keep in sync with the first, and no new way
+  to leak what the journal already masks.
+- **Opt-in, incremental, and fails open exactly as the issue required:** nothing exports
+  unless the script is run. A cursor file (`.ideal-harness/otel-export-state.json`,
+  overridable via `IDEAL_HARNESS_OTEL_STATE`) tracks how many journal entries have been
+  sent, so repeated runs (a cron job, a CI step) only ship what's new. A failed POST
+  leaves the cursor untouched — the same batch is retried on the next run — and the
+  script's own exit code (1 on export failure) is the only signal; nothing here is wired
+  into the `PreToolUse`/`PostToolUse` hook path, so a down collector can never slow or
+  block an actual tool call, only delay when spans arrive at the backend.
+- **Verified against this repo's own real journal, not a synthetic fixture:** run
+  directly against `.ideal-harness/guard-journal.jsonl` (552 real entries accumulated
+  during this session's own work), producing valid OTLP/HTTP JSON; the incremental
+  cursor confirmed idempotent on a same-state rerun; the HTTP path exercised against two
+  local one-shot mock collectors — one returning `500` (confirmed: cursor does not
+  advance, exit code 1, custom `OTEL_EXPORTER_OTLP_HEADERS` still delivered) and one
+  returning `200` (confirmed: cursor advances, correct span count received). No
+  dedicated `test/` suite exists for this script, matching the established convention
+  for `scripts/report.mjs` and `scripts/doctor.mjs` — none of the three have unit tests;
+  all three are operational tooling verified by running them for real, stated here
+  rather than left to look like an oversight.
+- **Home:** `scripts/otel-export.mjs` (new). No changes inside any of the six modules.

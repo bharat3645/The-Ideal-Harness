@@ -180,7 +180,13 @@ so a stuck or looping run stops itself instead of burning budget indefinitely.
 lease fired — lands in the hash-chained `.ideal-harness/guard-journal.jsonl`.
 `ideal-harness-guard verify-journal` confirms nothing was tampered with; `scripts/report.mjs`
 renders it (plus the ledger, memory graph, and episodic store) into one static HTML page
-for a human to review after a run, no live server required.
+for a human to review after a run, no live server required. To put those same decisions
+into an existing observability stack instead, `node scripts/otel-export.mjs` maps the
+journal onto OTLP/HTTP JSON spans by hand (stdlib `fetch` + `node:crypto` — no OTel SDK,
+no new dependency) and POSTs them to `OTEL_EXPORTER_OTLP_ENDPOINT`, or writes them to a
+file for a collector to tail if no endpoint is set. Opt-in, incremental (a cursor file
+tracks what's already been sent), and fails open — a down collector delays export, never
+a tool call.
 
 None of this is new mechanism — it's the same floor, ledger, and journal a human uses
 interactively, composed into a recipe for when no human is there to answer an `ask`. If
@@ -290,9 +296,13 @@ Tag `vX.Y.Z` to publish via CI (`.github/workflows/release.yml`, needs the `NPM_
 
 ## Verification
 
-- **370 unit tests** (368 pass, 2 honestly skipped — the semgrep/osv-scanner integration
-  tests, which skip when those external binaries aren't on PATH rather than faking a pass)
-  on `node:test` with zero test-framework dependencies.
+- **434 unit tests** on `node:test` with zero test-framework dependencies. In CI (no
+  semgrep/osv-scanner on PATH), 430 pass, 0 fail, 4 skip. Locally, with both binaries
+  actually installed, those same 4 run for real and fail — not flakiness: they're the
+  real-binary integration tests from issue #7 catching 3 genuine bugs in
+  `vet_skill_deep`'s parsers, tracked as issue #36 (`src/guard/vet/external.ts` is
+  self-policy-protected, so this session could document the bugs with failing tests but
+  not fix them). Stated here rather than silently expected to pass.
 - Biome clean, fully type-checked.
 - CI runs biome + build + check + test + validate + a skill-threat self-scan on every change.
 - **Dogfooded.** The substrate validates its own repo; the code-graph indexes its own source.

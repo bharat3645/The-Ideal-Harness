@@ -2,12 +2,13 @@
 
 ## v0.3.0 (2026-08-19)
 
-A backlog-clearing pass: 13 ROADMAP issues closed, 2 real bugs found and precisely
+A backlog-clearing pass: 14 ROADMAP issues closed, 3 real bugs found and precisely
 documented (not fixed — self-policy-protected code, left for a human), zero new runtime
-dependencies. 434 tests (was 401 at session start), 428 pass — the 4 failures are
-`test/guard/vet-external.test.ts` cases exercising real, confirmed bugs in
-`src/guard/vet/external.ts` (issue #36), not flakiness; they skip cleanly on CI, which
-doesn't have `semgrep`/`osv-scanner` installed.
+dependencies. 434 tests; CI (run 32229172072, both Node 21 and 22) shows 430 pass, 0 fail,
+4 honestly skipped — the `semgrep`/`osv-scanner` integration tests, absent from the CI
+runner. Locally, with both binaries actually installed, those same 4 tests run for real
+and fail instead of skipping — not flakiness, they're `test/guard/vet-external.test.ts`
+cases exercising real, confirmed bugs in `src/guard/vet/external.ts` (issue #36).
 
 - **web** — DNS-rebinding TOCTOU gap closed with zero new dependencies (`src/web/pinned-request.ts`,
   supersedes `decisions.md` D026 as D038, #5); bracketed IPv6 literals fixed in the SSRF
@@ -29,6 +30,13 @@ doesn't have `semgrep`/`osv-scanner` installed.
 - **guard** — real semgrep/osv-scanner integration tests, run against the actual binaries
   for the first time (#7) — surfaced 3 real parser/environment bugs in
   `src/guard/vet/external.ts`, tracked in #36 since that file is self-policy-protected.
+- **observability** — new `scripts/otel-export.mjs` maps the guard decision journal onto
+  OTLP/HTTP JSON spans by hand (stdlib `fetch` + `node:crypto`, no OTel SDK, no new
+  dependency) and POSTs to `OTEL_EXPORTER_OTLP_ENDPOINT`, or writes a file for a collector
+  to tail if unset. Opt-in, incremental (cursor file), fails open — never touches the
+  `PreToolUse`/`PostToolUse` path (D040, #18). Lives in `scripts/`, not `src/guard/`,
+  because guard's own self-policy floor denies writing anywhere under `src/guard/`, new
+  files included.
 - **security posture** — published `SECURITY-COVERAGE.md`, an honest OWASP Agentic
   Applications Top 10 (2026) coverage table: 4 full, 5 partial, 1 out of scope, every
   verdict cited to a real file (#20). Opened #35 (Windows sandbox parity — no code written,
