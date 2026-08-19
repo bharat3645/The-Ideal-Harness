@@ -106,7 +106,9 @@ Exists: structural code-graph — regex tier by default, zero deps; an **optiona
 tier (TS/TSX/JS/Python/Java/Kotlin/Go/Rust, degrading per-file to regex on any parse failure)
 when the operator installs `web-tree-sitter` + grammar packages — with token-budgeted subgraph retrieval, now
 persisted (`<root>/.ideal-harness/memory/graph.json`) and incrementally re-indexed (only changed
-files are re-extracted); episodic BM25 store; curator (claims reconciled against tool evidence);
+files are re-extracted); episodic recall — hand-rolled BM25 always available, upgrading to an
+**optional** SQLite-FTS5 tier + lexical vector rerank (D041) on Node ≥22.5 via Node's own
+built-in `node:sqlite`, no new dependency; curator (claims reconciled against tool evidence);
 workspace isolation by construction. The drift-guard is sharper for it (§3.3): a structural
 verdict built from an all-tree-sitter source set can legitimately hard-block.
 
@@ -124,8 +126,12 @@ Could become:
   further out.
 - **Temporal memory.** Git-aware: *when* did X change, what did the file look like at
   the decision point. Answers "why is this here" — the question agents ask most.
-- **Hybrid retrieval** — BM25 + int8-vector RRF rerank (DESIGN.md L2, deferred).
-  BM25 stays the deterministic default; vectors are a rerank, never the source of truth.
+- **Hybrid retrieval** — partially shipped 2026-08-19 (D041): SQLite-FTS5 first-stage +
+  a lexical (hashed bag-of-words, cosine-similarity) vector rerank, both zero-dependency.
+  BM25/FTS5 stays the deterministic default; the rerank is a blend, never the source of
+  truth. What's still open: DESIGN.md L2's original envisioning was an *int8-vector* RRF
+  rerank — real embeddings, not a lexical proxy — which needs an embedding source
+  (bundled model weights or a network call) neither approved nor built here.
 - **Provenance made mandatory**, not just available — today `evidence` is optional and
   stamped only when the caller supplies it; requiring it end-to-end is a further step.
 
@@ -358,11 +364,14 @@ Perfection here is substantially subtractive. Each refusal protects a property f
 > than a clean pass — disclosed as issue #36, not hidden; the OWASP Agentic Applications Top 10
 > coverage table (`SECURITY-COVERAGE.md`); and an opt-in OTLP span exporter for the guard
 > journal (`scripts/otel-export.mjs`, D040 — kept outside `src/guard/` by that module's own
-> self-policy floor, which denies writing there even to add a read-only capability). **Not
-> shipped, and not claimed:** SQLite-FTS5/vector hybrid memory (issue #19, blocked on a
-> dependency decision this project's zero-dep guarantee hasn't cleared yet), Windows sandbox
-> parity (issue #35), auto-applied compression/sandbox via the hook contract (issues #3/#4 —
-> both need edits inside files the self-policy floor protects, so they wait on a human).
+> self-policy floor, which denies writing there even to add a read-only capability); and,
+> later the same day, episodic recall's SQLite-FTS5 tier + lexical vector rerank (§3.2,
+> D041) — via Node's own built-in `node:sqlite`, not a new dependency at all, degrading
+> cleanly to the original hand-rolled BM25 tier on Node <22.5. **Not shipped, and not
+> claimed:** Windows sandbox parity (issue #35), auto-applied compression/sandbox via the
+> hook contract (issues #3/#4) — all three need edits inside files the self-policy floor
+> protects, so ready-to-apply patches were prepared instead (`patches/`) for a human to
+> review and apply directly.
 
 Ordered by leverage-per-effort, respecting DESIGN.md's v0.2 commitments:
 

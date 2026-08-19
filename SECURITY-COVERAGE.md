@@ -168,8 +168,9 @@ independently validate the *content of tool results themselves* before they beco
 references it, even though `ASI01`'s injection-fencing already flags known injection
 patterns in that same content). There's also no anomaly detection over the episodic store
 itself (a burst of similar false observations landing in one session isn't specifically
-flagged as suspicious). `ROADMAP.md` #19 (no vector/hybrid rerank for episodic recall) is an
-adjacent quality gap, not a poisoning defense, but worth noting it's open too.
+flagged as suspicious) — this remains open regardless of #19's retrieval-quality
+improvements (D041, closed 2026-08-19): a sharper *ranking* of episodic recall does not add
+*anomaly detection* over what's stored, which is what this specific gap is about.
 
 ## ASI07 — Insecure Inter-Agent Communication
 
@@ -284,14 +285,14 @@ rather than something the floor itself claims to do — but it means "containmen
 | ASI09 | Human-Agent Trust Exploitation | Partial | deterministic classification, explain-mode |
 | ASI10 | Rogue Agents | Partial | the entire floor (containment, not detection) |
 
-Cross-referenced open work: `ROADMAP.md` #19 (no vector/hybrid rerank for episodic
-recall), issue #35 (Windows sandbox parity), issue #36 (`vet_skill_deep` parser bugs,
-including the osv-scanner severity-ceiling issue behind ASI04's downgrade above). #7, #14,
-#15, and #17 — all cited in earlier drafts of this table as open gaps — shipped during the
-2026-08-19 session and are closed; this table was revised the same day to stop citing them
-as open. Cross-referenced decisions: `decisions.md` D005 (soft floor by default), D007
-(zero deps), D011 (sandboxed verification, Windows tradeoff), D016 (leases CLI-only), D037
-(spend durability), D039 (concurrency locking).
+Cross-referenced open work: issue #35 (Windows sandbox parity), issue #36 (`vet_skill_deep`
+parser bugs, including the osv-scanner severity-ceiling issue behind ASI04's downgrade
+above). #7, #14, #15, #17, and #19 — all cited in earlier drafts of this table as open gaps
+— shipped during the 2026-08-19 session and are closed; this table was revised the same day
+to stop citing them as open. Cross-referenced decisions: `decisions.md` D005 (soft floor by
+default), D007 (zero deps), D011 (sandboxed verification, Windows tradeoff), D016 (leases
+CLI-only), D037 (spend durability), D039 (concurrency locking), D041 (episodic FTS5 +
+lexical vector rerank).
 
 *Compiled 2026-08-19 against OWASP's Agentic Applications Top 10, 2026 edition
 (ASI01–ASI10, published 2025-12-09 by the OWASP GenAI Security Project). Re-verify against

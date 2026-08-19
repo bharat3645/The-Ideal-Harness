@@ -17,7 +17,7 @@ import { redactSecrets, wrapUntrusted } from '../../guard/index.js';
 import { reconcileClaims, type ToolCallEvidence } from '../curator.js';
 import { consolidate } from '../episodic/consolidate.js';
 import { episodicSnapshotPath, loadEpisodicSnapshot, saveEpisodicSnapshot } from '../episodic/persist.js';
-import { searchObservations } from '../episodic/search.js';
+import { searchObservationsAsync } from '../episodic/search.js';
 import { EpisodicStore, type ObservationType } from '../episodic/store.js';
 import { CodeGraph } from '../structural/graph.js';
 import { graphSnapshotPath, loadGraphSnapshot, saveGraphSnapshot } from '../structural/persist.js';
@@ -271,14 +271,16 @@ export function buildMemoryTools(
     },
     {
       name: 'memory_search',
-      description: 'Recall episodic observations by BM25 relevance (not recency).',
+      description:
+        'Recall episodic observations by relevance (SQLite-FTS5 + lexical vector rerank when the ' +
+        'runtime supports it, hand-rolled BM25 otherwise — not recency).',
       inputSchema: {
         type: 'object',
         properties: { query: { type: 'string' }, limit: { type: 'number' } },
         required: ['query'],
       },
-      handler: (args) => {
-        const hits = searchObservations(store.all(), asString(args, 'query', ''), {
+      handler: async (args) => {
+        const hits = await searchObservationsAsync(store.all(), asString(args, 'query', ''), {
           limit: asNumber(args, 'limit', 10),
         });
         // Recalled memory is untrusted: it may carry instructions written in a

@@ -10,9 +10,9 @@ comprehension problem.
 Read [CONTRIBUTING.md](CONTRIBUTING.md) first. If you are contributing with an AI agent,
 read [AGENTS.md](AGENTS.md) too.
 
-**14 issues (#1, #2, #5, #7, #9, #10, #11, #12, #13, #14, #15, #16, #17, #20) shipped in
-v0.3.0** — closed for real, with tests, not just marked done. `CHANGELOG.md` has the
-detail; `decisions.md` D035–D040 has the reasoning behind each design call.
+**15 issues (#1, #2, #5, #7, #9, #10, #11, #12, #13, #14, #15, #16, #17, #19, #20) shipped
+in v0.3.0** — closed for real, with tests, not just marked done. `CHANGELOG.md` has the
+detail; `decisions.md` D035–D041 has the reasoning behind each design call.
 
 ---
 
@@ -45,21 +45,19 @@ adding one is a real decision needing a `decisions.md` entry, not an assumption.
 |---|---|---|---|
 | [#3](../../issues/3) | Auto-apply compression via `PostToolUse` | `compress`, hooks | 2–3d |
 | [#4](../../issues/4) | Auto-apply the sandbox via `PreToolUse` | `guard`, hooks | 2–3d |
-| [#19](../../issues/19) | SQLite-FTS5 + vector rerank for episodic memory | `memory` | 5d+ |
 | [#35](../../issues/35) | Windows sandbox hardening (network egress + process visibility) | `guard` | multi-day |
 | [#36](../../issues/36) | `vet_skill_deep` parser bugs: path-prefixed semgrep `check_id`, unreachable osv-scanner `critical` severity, `env: {}` breaks semgrep on Windows | `guard/vet` | ~1d |
+
+~~#19~~ — closed 2026-08-19: SQLite-FTS5 via Node's own built-in `node:sqlite` (zero new
+dependency, not even an optional one — see `decisions.md` D041) + an honestly-labeled
+lexical (not neural) vector rerank, both behind the existing episodic-store contract,
+degrading cleanly to the original hand-rolled BM25 tier on Node <22.5.
 
 **#3 and #4 are the highest-leverage items left on the roadmap.** Both capabilities exist
 and are tested; they just have to be called manually today. Wiring them into the hook
 contract turns "the model has to remember to use this" into "this just happens." They
 pair naturally — same architecture, opposite ends of the call. Say so in the issue if you
 want both and the other will be held for you.
-
-**#19 needs a dependency decision first, argued in the issue before code.** SQLite-FTS5
-isn't available zero-dependency across this project's supported Node range (`node:sqlite`
-is Node 22.5+-only and still experimental; this project supports 21+), and a real vector
-rerank needs an embedding source from somewhere. See `decisions.md` D007 for the bar a new
-dependency has to clear.
 
 **#35 and #36 both live in `src/guard/`,** which is self-policy-protected — the harness's
 own floor denies writing there through the harness itself, on purpose, so a model can't

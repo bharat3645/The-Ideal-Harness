@@ -2,13 +2,14 @@
 
 ## v0.3.0 (2026-08-19)
 
-A backlog-clearing pass: 14 ROADMAP issues closed, 3 real bugs found and precisely
+A backlog-clearing pass: 15 ROADMAP issues closed, 3 real bugs found and precisely
 documented (not fixed — self-policy-protected code, left for a human), zero new runtime
-dependencies. 434 tests; CI (run 32229172072, both Node 21 and 22) shows 430 pass, 0 fail,
+dependencies. 444 tests; CI (run 32229172072, both Node 21 and 22) shows 430 pass, 0 fail,
 4 honestly skipped — the `semgrep`/`osv-scanner` integration tests, absent from the CI
-runner. Locally, with both binaries actually installed, those same 4 tests run for real
-and fail instead of skipping — not flakiness, they're `test/guard/vet-external.test.ts`
-cases exercising real, confirmed bugs in `src/guard/vet/external.ts` (issue #36).
+runner (test count grew after that run — see the `memory` entry below). Locally, with both
+binaries actually installed, those same 4 tests run for real and fail instead of skipping —
+not flakiness, they're `test/guard/vet-external.test.ts` cases exercising real, confirmed
+bugs in `src/guard/vet/external.ts` (issue #36).
 
 - **web** — DNS-rebinding TOCTOU gap closed with zero new dependencies (`src/web/pinned-request.ts`,
   supersedes `decisions.md` D026 as D038, #5); bracketed IPv6 literals fixed in the SSRF
@@ -17,7 +18,11 @@ cases exercising real, confirmed bugs in `src/guard/vet/external.ts` (issue #36)
 - **memory** — Go and Rust added to the tree-sitter structural tier (#1, #2); structural
   graph snapshots workspace-stamped, matching the episodic store's existing pattern (#16);
   episodic-store consolidation now auto-triggers every N writes, operator-tunable via
-  `IDEAL_HARNESS_MEMORY_CONSOLIDATE_EVERY` (D036, #15).
+  `IDEAL_HARNESS_MEMORY_CONSOLIDATE_EVERY` (D036, #15); episodic recall gets a real
+  SQLite-FTS5 first-stage tier via Node's own built-in `node:sqlite` — zero new dependency,
+  not even an optional one — plus an honestly-labeled lexical (hashed bag-of-words, not
+  neural) vector rerank, both degrading cleanly to the original hand-rolled BM25 tier on
+  Node <22.5; new `searchObservationsAsync` sits alongside the unchanged sync path (D041, #19).
 - **orchestrate** — spend tracking now survives an MCP server restart, fail-closed on
   corrupt/missing state (D037, #14); `worktree_create`'s `baseRef` is `--`-terminated
   against flag injection (#10).
