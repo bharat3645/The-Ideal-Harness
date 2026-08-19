@@ -29,6 +29,10 @@ Aligned with Anthropic's agent security guidance and OWASP LLM06 (Excessive Agen
   scans any third-party skill before it loads.
 - An OS sandbox command builder (Seatbelt / bubblewrap) + subprocess env-scrub.
 
+See [`SECURITY-COVERAGE.md`](./SECURITY-COVERAGE.md) for a full, file-path-cited mapping
+against the OWASP Agentic Applications Top 10 (2026) — full/partial/none per item, gaps
+stated as plainly as the coverage.
+
 ## Reporting a vulnerability
 
 Please report security issues privately via a GitHub Security Advisory on the repository,

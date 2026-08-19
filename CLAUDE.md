@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # The Ideal Harness — Project Instructions
 
 > **Scope rule (overrides global workflow):** In this repository, route work through the
@@ -119,8 +123,10 @@ the floor); `IDEAL_HARNESS_USER_POLICY=off` is the kill-switch.
 
 ## Project conventions
 
-- **Stack:** TypeScript (ESM), Node ≥ 20, a single package built with `tsc`, Biome. Tests on
-  `node:test` (zero test-framework deps).
+- **Stack:** TypeScript (ESM), Node ≥ 21 (raised from ≥ 20 on 2026-08-19 — `node --test`'s
+  glob-pattern support, which `pnpm test`'s invocation relies on, only landed in Node 21;
+  see `ROADMAP.md` issue #9 and commit `2839406`), a single package built with `tsc`,
+  Biome. Tests on `node:test` (zero test-framework deps).
 - **Zero runtime dependencies — this is load-bearing.** `package.json` has no `dependencies` key
   and must not gain one. The MCP stdio server is **hand-rolled** in `src/core/runtime/mcp.ts`
   (`createMcpServer`), deliberately *not* `@modelcontextprotocol/sdk`. `web-tree-sitter` is a
@@ -129,12 +135,19 @@ the floor); `IDEAL_HARNESS_USER_POLICY=off` is the kill-switch.
   and human agreement first — see D007 and D028.
 - **Package manager:** pnpm 10.33.0, pinned via `packageManager`. There is no `pnpm` shim on PATH in this environment — invoke it as **`corepack pnpm …`**.
 - **Build:** `corepack pnpm build` (one `tsc -p tsconfig.json` project: `src/` → `dist/`; the compiler resolves module order).
-- **Test:** `corepack pnpm test` (full suite across the 6 modules; compiles `tsconfig.test.json` → `dist-test/`, then `node --test`).
-- **Validate:** `corepack pnpm validate` (the substrate validates its own repo).
+- **Typecheck:** `corepack pnpm check` (`tsc --noEmit` with `exactOptionalPropertyTypes` and other strict flags via `tsconfig.base.json`) — CI runs this as a separate step from `build`; a change can build while still failing `check`.
+- **Test:** `corepack pnpm test` (full suite across the 6 modules; compiles `tsconfig.test.json` — `src/**/*.ts` + `test/**/*.ts` — to `dist-test/`, then runs `node --test "dist-test/test/**/*.test.js"`).
+  - **Single test file:** build test output once (`corepack pnpm test` or just `corepack pnpm exec tsc -p tsconfig.test.json`), then run only that file directly, e.g. `node --test dist-test/test/guard/policy.test.js`.
+  - **Single test by name:** add `--test-name-pattern` to either form, e.g. `node --test --test-name-pattern="fail closed" dist-test/test/guard/policy.test.js`.
+  - Test files live at `test/<module>/*.test.ts`, mirroring `src/<module>/`.
+- **Validate:** `corepack pnpm validate` (the substrate validates its own repo — manifests + skill frontmatter).
 - **Lint/format:** `corepack pnpm biome` / `corepack pnpm biome:fix`.
-- **Layout:** one package at the repo root — `src/{core,guard,compress,memory,orchestrate,web}` compile to `dist/<module>/`; six bins + five MCP servers ship from the single package.
-- **Important paths:** `src/{core,guard,compress,memory,orchestrate,web}`; policy in `src/guard/policy/defaults.ts`; hooks in `hooks/`; agents in `agents/`; dogfood wiring in `.claude/settings.json` (+ statusline in `.claude/settings.local.json`); project docs at the repo root — `README.md`, `DESIGN.md`, `VISION.md`, `CHANGELOG.md`, `decisions.md`, `flow.md`, `BENCHMARK.md`.
+- **Doctor / report:** `node scripts/doctor.mjs` checks the harness's own wiring (dist built, hooks wired, all 5 MCP servers boot, policy parses) and exits non-zero on a problem; `node scripts/report.mjs` renders the journal/ledger/memory into one static HTML page.
+- **CI (`.github/workflows/ci.yml`), in order:** `biome` → `build` → `check` → `test` → `validate .` → a skill-threat self-scan (`ideal-harness-guard vet` over every `skills/**/SKILL.md`). Match this order locally before pushing.
+- **Layout:** one package at the repo root — `src/{core,guard,compress,memory,orchestrate,web}` compile to `dist/<module>/`; six bins + five MCP servers ship from the single package. Within each module directory: `cli/` is the bin entry point, `runtime/` wires the module into an MCP server (reused by `core`'s hand-rolled `createMcpServer`); `core` additionally has `schema/` (manifest/skill validation) and `skills/` (templating + multi-host generation); `guard` additionally has `policy/` (the tiered rule engine — defaults in `policy/defaults.ts`) and `vet/` (the skill-vetting scanner).
+- **Important paths:** `src/{core,guard,compress,memory,orchestrate,web}`; policy in `src/guard/policy/defaults.ts`; hooks in `hooks/`; agents in `agents/`; skills in `skills/<name>/SKILL.md`; dogfood wiring in `.claude/settings.json` (+ statusline in `.claude/settings.local.json`); project docs at the repo root — `README.md`, `DESIGN.md`, `VISION.md`, `CHANGELOG.md`, `decisions.md`, `flow.md`, `BENCHMARK.md`, `AGENTS.md`.
 - **Never touch:** `.claude/settings.json`, `.claude-plugin/*`, `src/guard/**`, `dist/guard/**`, and `hooks/*` are policy-protected — the floor denies edits to them. If one of them genuinely needs to change (e.g. `.claude-plugin/plugin.json` gaining a new module's MCP server), say so explicitly and let the human make the edit — do not attempt to route around the deny.
+- **Contribution non-negotiables (`AGENTS.md`):** this repo is an enforcement floor that runs below other people's models in production, so it holds itself to a higher bar than an ordinary codebase. Four rules are checked in review regardless of how good the rest of a change is: (1) **enforce below the model** — a safety/scope rule is deterministic code in `guard`, never a prompt instruction asking the model to behave; (2) **zero overlap** — each capability has exactly one home (check `DESIGN.md` §6 and `decisions.md` before adding a second mechanism for something that already exists); (3) **clean-room** — lift ideas, not code, from other projects or training data; (4) **honest by construction** — do not claim a capability you cannot measure, and do not fabricate benchmark numbers or claim checks passed that were not run. `AGENTS.md` also has the fuller pre-PR checklist and scope-discipline notes (one issue per PR, no adjacent refactors, no reformatting).
 
 ## Honesty rule
 

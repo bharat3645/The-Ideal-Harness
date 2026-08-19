@@ -193,7 +193,7 @@ granted should fail loudly and get a rule added, never fall back to guessing.
 - **Enforce below the model.** Every safety and scope rule is deterministic code — a hook, a gate, a scanner — never a polite request in a prompt.
 - **Zero overlap.** One chosen mechanism per capability; the rejected alternatives are documented, not deleted in silence.
 - **Honest by default.** A 3.4% compression number and a v0.1 scope note are features. The metrics we cannot fake are the evidence for the ones you cannot easily check.
-- **Standards-aligned.** 12-Factor Agents compliant; aligned with published context-engineering and long-running-harness guidance and OWASP LLM06 (excessive agency).
+- **Standards-aligned.** 12-Factor Agents compliant; aligned with published context-engineering and long-running-harness guidance and OWASP LLM06 (excessive agency) — see [`SECURITY-COVERAGE.md`](./SECURITY-COVERAGE.md) for the full OWASP Agentic Applications Top 10 (2026) coverage table (4 full, 5 partial, 1 out of scope — gaps named, not hidden).
 
 ## Architecture
 
@@ -290,7 +290,9 @@ Tag `vX.Y.Z` to publish via CI (`.github/workflows/release.yml`, needs the `NPM_
 
 ## Verification
 
-- **329 unit tests** on `node:test` with zero test-framework dependencies.
+- **370 unit tests** (368 pass, 2 honestly skipped — the semgrep/osv-scanner integration
+  tests, which skip when those external binaries aren't on PATH rather than faking a pass)
+  on `node:test` with zero test-framework dependencies.
 - Biome clean, fully type-checked.
 - CI runs biome + build + check + test + validate + a skill-threat self-scan on every change.
 - **Dogfooded.** The substrate validates its own repo; the code-graph indexes its own source.
@@ -302,7 +304,7 @@ Honesty is the brand, so here is exactly where the harness stands.
 
 - **6 of 9 originally-designed modules ship as real code**: `core`, `guard`, `compress`, `memory`, `orchestrate`, `web`. `skills` (a curated, discoverable third-party library — the vetting gate itself has shipped since v0.1) and a standalone `design`/`eval` module did not ship as separate modules — a `design-critique` skill and `scripts/report.mjs` cover the highest-value slice of each without adding new source modules. Full status: `VISION.md §7`'s roadmap table; the reasoning behind every scope call: `decisions.md`.
 - **Clean-room depth is deliberate, with the upgrade path already drawn behind a stable contract:**
-  - the code-graph uses regex by default, zero deps; an **optional** tree-sitter tier (TS/JS/TSX/Python) activates when the operator installs `web-tree-sitter` + grammar packages, behind the identical `SymbolNode`/`Edge` contract, and degrades per-file to regex on any parse failure. The graph persists (`<root>/.ideal-harness/memory/graph.json`, workspace-stamped) and re-indexes incrementally — only changed files are re-extracted. More languages on by default, and LSP/SCIP, remain further upgrades.
+  - the code-graph uses regex by default, zero deps; an **optional** tree-sitter tier (TS/JS/TSX/Python/Java/Kotlin/Go/Rust) activates when the operator installs `web-tree-sitter` + grammar packages, behind the identical `SymbolNode`/`Edge` contract, and degrades per-file to regex on any parse failure. The graph persists (`<root>/.ideal-harness/memory/graph.json`, workspace-stamped) and re-indexes incrementally — only changed files are re-extracted. More languages on by default, and LSP/SCIP, remain further upgrades.
   - the episodic store is in-memory + JSON-persisted today, with consolidation/decay and provenance (`evidence`) on records; SQLite-FTS5 + vector rerank is still a possible future swap behind the same contract, not required for correctness today.
   - drift-guard's grep tier (`verify_symbol`) still never hard-blocks — grep cannot prove absence. A structural tier (`verify_symbol_structural`) now *can*: it hard-blocks a symbol proven absent only when every source considered was parsed at the tree-sitter tier, capping back to grep authority the moment any source fell back.
   - orchestrate's ledger tasks carry a structural `verify: {command, expect?}` field that `ledger_verify` actually re-runs (policy-gated, sandboxed when the platform supports it) — "done" is a measurement, wired as the reviewer agent's default path, not an assertion it trusts.

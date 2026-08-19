@@ -937,3 +937,328 @@ never deleted or edited to look like it always said the new thing.
   `src/guard/index.ts` (export), `package.json` (+`ws`, `@types/ws` devDependencies),
   `test/web/browse/{daemon,integration}.test.ts` (new, 13 tests), `test/web/mcp.test.ts`
   (+2 tests).
+
+## D035 — CCR stays process-lifetime scoped, no disk backing; the CLI compress path stays honestly one-way
+- **Date:** 2026-08-19
+- **Status:** decided, shipped
+- **Decision:** `ROADMAP.md` #13 named three real gaps in `CcrStore` (`src/compress/ccr.ts`):
+  no cap/eviction, no disk backing, and a CLI path that stashes nothing. Only the first is
+  fixed by adding capability; the other two are resolved by *scope*, not by building more:
+  1. **Byte cap + LRU eviction, added for real.** `CcrStore` now takes a `capBytes`
+     constructor arg (default 50 MiB, operator-tunable via `IDEAL_HARNESS_CCR_CAP_BYTES`,
+     same invalid-value-warns-and-falls-back pattern as `orchestrate`'s
+     `IDEAL_HARNESS_SPEND_CAP`). A `Map`'s insertion-order iteration doubles as the LRU
+     list — `retrieve()`/re-`stash()` of an existing hash calls `touch()` (delete + re-set)
+     to move an entry to the most-recently-used end, so the true least-recently-used entry
+     is always the map's first key. A single entry larger than the cap on its own is kept
+     alone rather than evicted immediately after being stashed. New `prune()` for an
+     explicit, on-demand evict-to-cap; new `bytes` getter for observability.
+  2. **No disk backing — CCR stays process-lifetime scoped, on purpose.** The structural
+     graph and episodic store persist because they represent accumulated knowledge worth
+     surviving a restart. CCR is not that: it exists purely so a model that just received a
+     `<<ccr:HASH>>` marker can pull the original back *within the same live session* — an
+     ergonomic convenience, not a durable record. Disk-backing it would mean designing
+     eviction/cap semantics twice (once in memory, once on disk) for a store whose entire
+     value proposition is "retrieve what you just saw a moment ago." A marker does not
+     survive an MCP server restart; this is now stated in the module's own doc comment
+     rather than left implicit.
+  3. **The CLI `compress` command stays unconditionally one-way — explicitly, not
+     silently.** Wiring a `CcrStore` into a single CLI invocation would emit a marker that
+     is dead on arrival: the process exits before any later, separate invocation could
+     retrieve it, and `compress` has no `retrieve` counterpart in the first place. Emitting
+     a recoverability-implying marker that can never actually be redeemed would be less
+     honest than emitting none — so instead, `--help`/the default usage text and the
+     per-run stderr summary now say plainly that CLI compression is one-way, and point at
+     the `compress_tool_result`/`ccr_retrieve` MCP tools (a single long-lived process) as
+     the recoverable path.
+- **Why:** matches this project's existing honest-scoping precedent (e.g. `SpendGovernor`'s
+  own current in-memory-only limitation, `ROADMAP.md` #14, a separate open issue) — stating
+  a boundary plainly is preferred over building persistence nothing asked for by the
+  module's actual purpose.
+- **Alternatives rejected:** disk-backing `CcrStore` to mirror `memory`'s persistence
+  contract exactly — rejected per point 2 above, a durable-store contract for a
+  process-lifetime convenience; wiring a store into the CLI anyway "for consistency" with
+  the MCP tool — rejected per point 3, consistency isn't a virtue when the result is a
+  marker nothing can ever redeem.
+- **Home:** `src/compress/ccr.ts` (cap/eviction/`prune()`/`bytes`), `src/compress/runtime/mcp.ts`
+  (`resolveCcrCapBytes`, env wiring), `src/compress/cli/index.ts` (explicit one-way
+  messaging), `test/compress/ccr.test.ts` (+7 tests: cap validation, eviction, LRU-touch,
+  oversized-single-entry, `prune()`, `bytes`).
+
+## D036 — Episodic auto-consolidation triggers every N writes, not on a timer or at shutdown
+- **Date:** 2026-08-19
+- **Status:** decided, shipped
+- **Decision:** `ROADMAP.md` #15 named a real gap: `episodic/consolidate.ts`'s dedupe+prune
+  logic was correct but only reachable via the model-invoked `memory_consolidate` MCP tool,
+  so it ran when a model happened to remember to call it — in practice, rarely — while
+  every `memory_write` kept re-serializing the whole observation array, a cost curve that
+  gets worse exactly as a session gets longer. `memory_write` now auto-triggers
+  consolidation every `N` writes, `N` defaulting to 25 and operator-tunable via
+  `IDEAL_HARNESS_MEMORY_CONSOLIDATE_EVERY` (same unset-uses-default,
+  invalid-warns-and-falls-back-to-default contract as `orchestrate`'s
+  `IDEAL_HARNESS_SPEND_CAP` and `compress`'s new `IDEAL_HARNESS_CCR_CAP_BYTES` from D035 —
+  three modules, one operator-knob idiom). `buildMemoryTools` takes `consolidateEvery` as
+  an explicit parameter (`startMemoryMcp` resolves it from the env once at server start),
+  with a private write counter in closure scope; on the Nth write, `consolidate()` runs,
+  the store is replaced with the result, and the triggering write's own MCP response gains
+  a `consolidated: {before, after, deduped, pruned}` field alongside a matching stderr
+  line — announced through two channels (the model sees it in the tool response it just
+  received; the operator sees it in the process log), never silent.
+- **Why every-N-writes over the other three options the issue named:** a wall-clock timer
+  requires background scheduling state in what may be a short-lived MCP stdio subprocess,
+  and "time passed" isn't a property of the session's actual content, which sits oddly
+  with this project's "deterministic" bar; shutdown-triggered consolidation is too late by
+  construction — the quadratic-rewrite cost the issue is about has already been paid in
+  full by the time shutdown runs, and a crash means it never runs at all; a byte/record-
+  count threshold is a reasonable runner-up (arguably more directly tied to the actual cost
+  driver than a write count) but a plain write counter is simpler to reason about, trivial
+  to test deterministically (write N times, assert the Nth response carries `consolidated`
+  and the first N-1 don't), and easier for an operator to predict ("every 25th write") than
+  a threshold that depends on payload size.
+- **Alternatives rejected:** a wall-clock interval timer — rejected, see above; shutdown-only
+  triggering — rejected, defeats the purpose and a crash skips it entirely; a byte/record
+  threshold — not rejected outright, noted above as the strongest runner-up, but a plain
+  counter was chosen for simplicity and predictability; incremental (append-only) writes
+  instead of full-array re-serialization on every `memory_write`, addressing the same cost
+  curve from the opposite direction — explicitly named as optional in the issue itself and
+  **not done in this pass**; the auto-consolidation trigger closes the "nothing calls it"
+  half of the problem, but each individual `memory_write` still re-serializes the full
+  array between triggers. Left as a stated, un-silent follow-up rather than quietly
+  claimed as covered — `ROADMAP.md` #15 can stay open for that half, or a fresh issue can
+  track it specifically.
+- **Home:** `src/memory/runtime/mcp.ts` (`DEFAULT_CONSOLIDATE_EVERY`,
+  `resolveConsolidateEvery`, the `memory_write` handler's auto-trigger block),
+  `test/memory/firewall.test.ts` (+5 tests: no-fire-before-N, fires-exactly-at-N-and-
+  announces-it, permanent types survive repeated auto-triggers, threshold is configurable).
+
+## D037 — Spend governor: missing/corrupt state fails CLOSED to spent=cap, not open to spent=0
+- **Date:** 2026-08-19
+- **Status:** decided, shipped
+- **Decision:** `ROADMAP.md` #14 named a live bypass: `SpendGovernor`'s `used` counter was
+  purely in-memory and reconstructed fresh on every `startOrchestrateMcp()` call, so any
+  MCP subprocess restart (crash, host reconnect, context compaction, tool-list refresh)
+  silently reset a session's spend back to zero while the cap stayed unchanged — a hard cap
+  that resets on the exact event it's supposed to survive. Spend is now persisted
+  (`.ideal-harness/orchestrate-spend.json` by default, `IDEAL_HARNESS_SPEND_STATE`
+  overridable, same atomic tmp-then-rename write as the ledger) and restored via
+  `resolveInitialSpend()` at startup instead of always starting at zero.
+- **The fail-closed rule, stated precisely** (`resolveInitialSpend` in
+  `src/orchestrate/runtime/mcp.ts`): a state file that parses is trusted as-is. A state
+  file that's present but **corrupt** is quarantined (renamed `.corrupt`, same convention
+  as the ledger) and the governor starts at `spent = capTokens` — cap already considered
+  reached, not zero — so a tampered-with or damaged spend file can never grant a fresh
+  budget. A **missing** state file is more subtle: if the workspace's ledger already has
+  tasks in it (evidence a prior session ran), that's *also* treated as fail-closed
+  (`spent = capTokens`) rather than assumed-fresh, on the theory that a real first run
+  always self-bootstraps a state file (see next point) — so "missing, but the ledger isn't
+  empty" is itself a corruption signal. Only a genuinely empty ledger with no state file
+  starts at zero, and that zero is immediately persisted, not left implicit.
+- **Why bootstrap-write on first run instead of failing closed unconditionally:** the
+  issue's own wording ("missing... should fail closed") read literally would fail closed
+  on a brand-new project's very first startup too, before any session has ever run —
+  turning a hard cap into "blocks everything until a human manually resets it once,"
+  which is a usability regression the issue doesn't ask for and the cap's stated purpose
+  (bounding an *in-progress* session) doesn't require. Cross-referencing the ledger's own
+  task count resolves the ambiguity without that regression: a fresh workspace has an
+  empty ledger and no state file — safe to start at zero — while a non-empty ledger with a
+  missing spend file means something (loss, tampering, a pre-#14 checkout) removed state
+  that should exist, which is exactly the case to fail closed on.
+- **Stated residual gap, not hidden:** this cannot distinguish a workspace whose spend
+  file was deleted immediately after the bootstrap write (before any spend was ever
+  recorded, and before the ledger gained its first task) from a genuinely fresh workspace
+  — both look identical: no state file, empty ledger. Closing that fully would need a
+  separate, always-present bootstrap marker independent of the spend file itself, which
+  was not built here. What *is* fully closed is the bug the issue actually reports: every
+  **ordinary** restart of an in-progress session (the realistic, routine case — a crash,
+  reconnect, or compaction mid-session, where the ledger is never empty) now correctly
+  carries spend forward instead of resetting it.
+- **Deliberate reset, by design, is a write not a delete:** `ideal-harness-orchestrate
+  spend reset` writes an explicit `{used: 0, ts}` state rather than deleting the file —
+  deletion would be indistinguishable from the fail-closed "lost state" case above and
+  would either silently grant a fresh budget (if missing defaulted open) or refuse to ever
+  reset (if missing always failed closed on a non-empty ledger). An explicit zero-state
+  write is unambiguous either way.
+- **Alternatives rejected:** defaulting missing-or-corrupt to `spent=0` (the status quo
+  bug, rejected — the entire point of this issue); failing closed on *any* missing file
+  including a workspace's true first run (rejected — needless first-run lockout, see
+  above); a `spend reset` that deletes the file (rejected — ambiguous with data loss, see
+  above).
+- **Home:** `src/orchestrate/spend.ts` (`SpendState`, `serializeSpendState`,
+  `parseSpendState`, `SpendGovernor`'s new `initialUsed` constructor param),
+  `src/orchestrate/runtime/mcp.ts` (`spendStatePath`, `writeSpendState`,
+  `resolveInitialSpend`, the `spend_check` handler's `persistSpend()` call),
+  `src/orchestrate/cli/index.ts` (`spend reset` subcommand),
+  `test/orchestrate/spend-persist.test.ts` (+9 tests: serialize/parse round-trip and
+  rejection, `initialUsed` restore and validation, a full restart-carries-spend
+  simulation, corrupt-fails-closed, missing-with-tasks-fails-closed, missing-on-empty-
+  ledger-starts-at-zero, uncapped-is-moot, and deliberate-reset-is-honored).
+
+## D038 — DNS-rebinding gap closed: pin the connection to the validated address, zero new dependencies
+- **Date:** 2026-08-19
+- **Status:** active — **supersedes D026**'s "not closed" verdict on this one point;
+  D026's other content (what the SSRF guard blocks, the literal/decimal/octal/hex
+  bypasses it closes for free) still stands unchanged.
+- **Decision:** `checkUrlSafety` (`src/web/ssrf.ts`) now returns the exact address its
+  verdict was computed against (`pinnedIp`) — the literal IP for an IP-literal URL, or
+  `resolved[0].address` (deterministically the first entry, not "whichever the runtime
+  happens to pick") for a resolved hostname. `fetchPage` (`src/web/fetch.ts`) no longer
+  calls the global `fetch()` for the actual request; it calls a new `pinnedFetch`
+  (`src/web/pinned-request.ts`) with that exact address, on every hop including
+  redirects. `pinnedFetch` connects via `node:http`/`node:https`'s `request()` with
+  `host` set to the pinned IP directly — Node does not perform DNS resolution when
+  `host` is already a literal IP, so there is structurally no second lookup for an
+  attacker to race. `Host` header and (for https) TLS `servername` are set explicitly
+  to the original hostname, so the target still sees a normal, correctly-routed
+  request and certificate validation still checks against the real hostname, not the
+  IP.
+- **Why now, and why this approach specifically:** D026 named two options — a custom
+  `undici` dispatcher with a pinned `connect.lookup`, or resolve-once-and-connect-
+  directly via a lower-level API — and left both unbuilt, citing dependency/complexity
+  cost against this module's narrow, fetch-only scope (`decisions.md` D012). Checked
+  directly rather than assumed: `node:undici` is **not** importable as a Node built-in
+  module on this project's supported Node versions (`import('node:undici')` throws
+  `No such built-in module`, verified live against Node 24.19.0) — so the "zero
+  dependency" version of option 1 doesn't actually exist on this runtime; getting it
+  would mean adding the `undici` package as a real dependency, which is exactly the
+  kind of addition this project gates behind a `decisions.md` case and human sign-off
+  (D007). Option 2 (`node:http`/`node:https` directly) achieves the identical pin with
+  **zero new dependencies**, using only Node's own standard library — the same
+  dependency-free trade this module already made for HTML extraction
+  (`extractReadableText`'s hand-rolled tag-stripping instead of a DOM library). That
+  made the choice between the two options in D026 no longer a real tradeoff once
+  checked: option 2 is strictly better here (same security property, no dependency
+  cost), so it was the only one actually implemented.
+- **What is closed:** the exact gap D026 named — "an attacker controlling DNS for the
+  target hostname could serve a public IP for the check and a private IP moments later
+  for the real connection." That is no longer possible: the address that gets
+  connected to IS the address that was validated, by construction (one value, threaded
+  through, not two independent resolutions). Covers the initial URL and every redirect
+  hop, since `fetchPage`'s existing per-hop loop already re-runs `checkUrlSafety` (and
+  now `pinnedFetch`) on each one.
+- **What remains a residual, stated gap, not hidden:** `fetchPackageDocs`
+  (`src/web/docs.ts`) still calls the global `fetch()` directly and was NOT touched by
+  this change — it is out of scope for this issue and for D026: its target is always
+  the fixed, hardcoded `registry.npmjs.org` (never a model-supplied arbitrary URL), so
+  it never called `checkUrlSafety` in the first place and has no rebinding surface of
+  the kind D026/this entry are about. Also unchanged: TLS certificate validation still
+  trusts whatever CA chain the target presents for the real hostname — this closes the
+  *address* half of the TOCTOU gap, not a from-scratch certificate-pinning scheme,
+  which was never in scope here.
+- **Alternatives rejected:** the `undici`-dispatcher approach (rejected — not
+  achievable as a built-in import on this project's Node versions without adding a new
+  dependency, checked directly rather than assumed); leaving the gap open and only
+  re-documenting it (rejected — a working, zero-dependency, well-tested fix existed and
+  shipping it is strictly better than re-stating the same known limitation a second
+  time).
+- **Home:** `src/web/pinned-request.ts` (new — `pinnedFetch`), `src/web/ssrf.ts`
+  (`SsrfCheckResult.pinnedIp`, both return points), `src/web/fetch.ts` (`fetchPage`'s
+  hop loop now calls `pinnedFetch` instead of `fetch`), `test/web/pinned-request.test.ts`
+  (new, 6 tests — a real local loopback server proves the connection target is governed
+  by the pinned IP, not a re-resolved `.invalid`-TLD hostname that can never actually
+  resolve), `test/web/ssrf.test.ts` (+5 tests covering `pinnedIp` for the literal,
+  resolved, multi-address, and unsafe cases, plus a simulated rebinding scenario).
+
+## D039 — Concurrency control on persisted state: a shared zero-dependency file lock, applied by reload-mutate-write, not by wrapping the write alone
+- **Date:** 2026-08-19
+- **Status:** decided, shipped
+- **Decision:** `ROADMAP.md` #17 ("no concurrency control on any persisted state — two
+  sessions silently clobber each other") named the hardest correctness problem still
+  open. Every persisted store in this project (`memory`'s structural graph and episodic
+  store, `orchestrate`'s task ledger and spend checkpoint) already wrote atomically
+  (temp-file-then-rename), which prevents a *torn* file but does nothing about *two
+  complete writers racing* — the issue's own example: process A marks a task `done` and
+  persists; process B, holding an older in-memory copy from before A's write, persists
+  next and silently reverts the task back to `pending`. New `src/core/runtime/lock.ts`
+  (`withFileLock`, `lockPathFor`) provides one shared, zero-dependency mutex — an
+  `fs.openSync(path, 'wx')` exclusive-create, which the OS itself makes atomic (two
+  processes racing to open the same path with `'wx'` get exactly one success and one
+  `EEXIST`, no separate check-then-create step to race in the first place). Every
+  mutating tool across both modules now takes an optional `*Io` accessor
+  (`LedgerIo`/`SpendIo` in `orchestrate`, `GraphIo`/`EpisodicIo` in `memory`); when
+  provided, the handler locks, reloads the freshest on-disk state, applies its mutation
+  to *that* — not to the long-held in-memory object — saves, and resyncs the in-memory
+  object in place (`TaskLedger.loadFrom`/`CodeGraph.loadFrom`, mirroring
+  `EpisodicStore.replaceAll`, which already existed) so every other handler immediately
+  sees the merged result too.
+- **Why reload-and-replay, not just a lock around the existing write:** a lock wrapped
+  only around the final `write(ledger.serialize())` step would still lose A's update in
+  the scenario above — B's in-memory copy was already stale *before* the lock was ever
+  touched, so serializing the writes alone just makes B's stale write happen safely
+  instead of unsafely; the data is still wrong. The fix has to re-derive the mutation
+  against fresh state *while holding the lock*, which is why every mutating handler's
+  actual `ledger.add(...)`/`store.add(...)`/`graph.addFileAuto(...)` call now happens
+  inside the locked reload, not before it.
+- **Spend is additive, not replace-the-object:** `SpendGovernor` doesn't hold a
+  document to merge, it holds one counter, so its lock-protected path is simpler and
+  arguably more correct than the ledger/graph/episodic case: under the lock, both the
+  cap *check* and the *record* happen against the freshest on-disk total
+  (`spend.restore(freshUsed)` before checking, then `freshUsed + tokens` on allow) — new
+  `SpendGovernor.restore()`. This closes a subtler race the issue's own text didn't
+  spell out for spend specifically: checking the cap against a stale in-memory total
+  would let two concurrent processes each individually pass a check that's jointly
+  false, overspending past the cap even though the *recorded* total was never lost.
+- **Wait-vs-fail and the staleness threshold:** a lock that's held and NOT yet stale is
+  assumed to be a live process mid-write (this project's persisted state is small JSON;
+  writes should clear in milliseconds) — the caller waits with bounded retries (20
+  attempts × 50ms ≈ 1s default) and gets a clear, actionable thrown error naming the
+  lock path if it never clears, rather than hanging forever. A lock older than
+  `LOCK_STALE_MS` (30s — long enough that no realistic single write should ever take
+  that long, short enough that a genuinely crashed holder doesn't block a workspace for
+  long) is assumed abandoned and is cleared immediately, without spending the caller's
+  wait budget, then retried. An unreadable/corrupt lock file is treated as stale for the
+  same reason a corrupt state file is quarantined elsewhere in this project: never wedge
+  forever on broken bookkeeping.
+- **The ENOENT-race, closed separately and more cheaply, exactly as the issue
+  suggested:** `existsSync` then `readFileSync` is two syscalls, not one — a concurrent
+  writer's atomic rename can land in the gap between them, turning a perfectly valid
+  snapshot into a spurious `ENOENT` that the old code routed into the *corrupt-snapshot*
+  quarantine path. A new `readIfExists` helper (duplicated per this project's existing
+  precedent for these two near-identical modules, plus a copy in
+  `orchestrate/runtime/mcp.ts` for the ledger and spend loaders) now retries once on
+  `ENOENT` before concluding the file is genuinely absent — a transient race is no
+  longer treated as evidence of corruption. This also incidentally closes the "both
+  memory writers use the same fixed temp filename" collision the issue flagged: since
+  the whole reload-mutate-write cycle is now serialized by the lock, two processes can
+  no longer race to write the same `<file>.tmp` in the first place.
+- **Scope boundary, stated plainly:** this covers `memory` and `orchestrate`, per
+  `ROADMAP.md` #17's own table. `guard`'s audit journal was explicitly out of scope
+  (and `src/guard/**` is self-policy-protected regardless — not touched, not read for
+  modification). The auto-consolidation write-counter added in D036 (issue #15) stays a
+  per-process, in-memory counter, not persisted or synchronized across processes —
+  concurrent processes may auto-consolidate at slightly different cadences; this is a
+  deliberate, narrow scope limitation (consolidation is a housekeeping cadence, not
+  data), not a gap in the actual data-loss guarantee this entry is about.
+- **Alternatives rejected:** optimistic concurrency (a generation/mtime stamp, re-read
+  and reject-or-merge on mismatch) — rejected as strictly more complex than an advisory
+  lock for no correctness gain here, since every write in this project already fully
+  rewrites the whole document rather than a partial patch, so there's nothing an
+  optimistic scheme buys over "lock, reload fresh, mutate, write"; single-writer-per-
+  workspace enforced at startup — rejected, since it would make this project's own
+  worktree fan-out feature (multiple concurrent implementers) actively unusable, the
+  opposite of what it's for; a third-party lockfile library — rejected per `decisions.md`
+  D007, and unnecessary once `fs.openSync(path, 'wx')`'s atomicity was checked directly
+  rather than assumed.
+- **Home:** `src/core/runtime/lock.ts` (new — `withFileLock`, `lockPathFor`),
+  `test/core/lock.test.ts` (new, 7 tests: acquire/release, release-on-throw, real
+  concurrent mutual exclusion via `Promise.all`, stale-lock detection/recovery,
+  corrupt-lock-treated-as-stale, bounded-wait-then-clear-error on a genuinely held lock,
+  independent locks on different paths don't block each other). `src/orchestrate/ledger.ts`
+  (`TaskLedger.loadFrom`), `src/orchestrate/spend.ts` (`SpendGovernor.restore`),
+  `src/orchestrate/runtime/mcp.ts` (`LedgerIo`/`SpendIo`, `mutateLedger`,
+  `loadLedgerFresh`/`saveLedger`/`readCurrentSpend`, the ENOENT-retry `readIfExists`,
+  every ledger/spend handler rewired). `src/memory/structural/graph.ts`
+  (`CodeGraph.loadFrom`), `src/memory/structural/persist.ts` and
+  `src/memory/episodic/persist.ts` (ENOENT-retry `readIfExists`), `src/memory/runtime/mcp.ts`
+  (`GraphIo`/`EpisodicIo`, `mutateEpisodic`, `add_file`/`memory_write`/`memory_consolidate`
+  rewired). `test/orchestrate/concurrency.test.ts` (new, 4 tests, including the issue's
+  own headline scenario reproduced and proven fixed) and `test/memory/concurrency.test.ts`
+  (new, 3 tests) — both spin up two independent tool-set instances sharing one lock-backed
+  file, simulating two real concurrent MCP server processes rather than mocking the lock
+  away.
+- **Stated coverage gap, not hidden:** the ENOENT-race fix has no dedicated unit test —
+  deterministically forcing a rename to land inside the `existsSync`/`readFileSync`
+  window needs either injectable fs functions (a larger refactor of already-small,
+  duplicated modules) or a real timing-dependent race, neither attempted here. The fix
+  is exercised indirectly (the full suite's existing load/save tests all still pass
+  against the changed code path) but the race window itself is not directly proven
+  closed by a test, only by inspection.

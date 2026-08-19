@@ -8,12 +8,26 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Issue #9: engines.node previously declared ">=20" but CI only ever ran 22, so tsc
+        # would silently accept APIs Node 20 doesn't have. Added a Node 20 leg to check —
+        # it failed, confirming a real, pre-existing gap: `pnpm test` invokes
+        # `node --test "dist-test/test/**/*.test.js"` (a glob string), and node --test's
+        # native glob-pattern support only landed in Node 21 (commit 2839406, "ci: use Node
+        # 22 (node --test glob support lands in Node 21)"). A directory-argument alternative
+        # (`node --test dist-test/test`) was tried locally and does not reliably resolve as
+        # a recursive scan either, so `engines.node` was corrected to ">=21" instead of
+        # silently staying at ">=20" — matrix below tests the corrected floor (21) plus the
+        # version this project has actually run on (22), both expected to pass for real.
+        node-version: [21, 22]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ matrix.node-version }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm biome

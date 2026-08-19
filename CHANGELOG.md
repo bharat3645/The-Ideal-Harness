@@ -1,5 +1,44 @@
 # Changelog
 
+## v0.3.0 (2026-08-19)
+
+A backlog-clearing pass: 13 ROADMAP issues closed, 2 real bugs found and precisely
+documented (not fixed — self-policy-protected code, left for a human), zero new runtime
+dependencies. 434 tests (was 401 at session start), 428 pass — the 4 failures are
+`test/guard/vet-external.test.ts` cases exercising real, confirmed bugs in
+`src/guard/vet/external.ts` (issue #36), not flakiness; they skip cleanly on CI, which
+doesn't have `semgrep`/`osv-scanner` installed.
+
+- **web** — DNS-rebinding TOCTOU gap closed with zero new dependencies (`src/web/pinned-request.ts`,
+  supersedes `decisions.md` D026 as D038, #5); bracketed IPv6 literals fixed in the SSRF
+  guard, plus a second bug found along the way (IPv4-mapped IPv6 in hex-compressed form
+  bypassed the guard) (#11).
+- **memory** — Go and Rust added to the tree-sitter structural tier (#1, #2); structural
+  graph snapshots workspace-stamped, matching the episodic store's existing pattern (#16);
+  episodic-store consolidation now auto-triggers every N writes, operator-tunable via
+  `IDEAL_HARNESS_MEMORY_CONSOLIDATE_EVERY` (D036, #15).
+- **orchestrate** — spend tracking now survives an MCP server restart, fail-closed on
+  corrupt/missing state (D037, #14); `worktree_create`'s `baseRef` is `--`-terminated
+  against flag injection (#10).
+- **compress** — CCR store is now byte-capped with real LRU eviction; the CLI path's
+  one-way (lossy) nature is now explicit rather than silently implied (D035, #13).
+- **core** — new zero-dependency advisory file lock (`src/core/runtime/lock.ts`) closes
+  ROADMAP's own "hardest correctness problem currently open": concurrent MCP processes no
+  longer silently clobber each other's persisted state across the ledger, spend checkpoint,
+  structural graph, and episodic store (D039, #17).
+- **guard** — real semgrep/osv-scanner integration tests, run against the actual binaries
+  for the first time (#7) — surfaced 3 real parser/environment bugs in
+  `src/guard/vet/external.ts`, tracked in #36 since that file is self-policy-protected.
+- **security posture** — published `SECURITY-COVERAGE.md`, an honest OWASP Agentic
+  Applications Top 10 (2026) coverage table: 4 full, 5 partial, 1 out of scope, every
+  verdict cited to a real file (#20). Opened #35 (Windows sandbox parity — no code written,
+  self-policy-protected).
+- **housekeeping** — retired 11 stale GitHub issues (#21-#32) from a since-rejected v2.1-v2.3
+  plan that would have added a runtime dependency and duplicated already-shipped/already-
+  declined work; corrected `plan.md`'s pre-flatten paths and a CHANGELOG arithmetic error (#12);
+  corrected `engines.node` from a false `>=20` to the real `>=21` (`node --test`'s glob support
+  needs it) (#9).
+
 ## Unreleased
 
 ### v2 Phase 2 addendum 3 — closes D027's last two gaps: autoplan, OSV/semgrep (2026-08-11, same day)
@@ -83,8 +122,13 @@ Closes essentially all of `VISION.md §7`'s v0.2 remainder plus v0.3 ("the flywh
 v0.4 ("scale-out"), and v0.5 ("every host") roadmap lines, then closes a real
 integration-readiness gap found while auditing the result for embedding into a product
 or pipeline. `decisions.md` (new) now records the *why* behind every item below in
-ADR-lite form; `flow.md` (new) documents the actual runtime sequences. 105 new tests
-(294 total after this batch's own additions on top of Phase 1's 205), all passing.
+ADR-lite form; `flow.md` (new) documents the actual runtime sequences. 105 new tests on
+top of Phase 1's 205 (310 total from this batch's own arithmetic — corrected 2026-08-19;
+the entry previously said 294, which didn't reconcile with either its own inputs or the
+307 → 320 → 329 chain the later addenda below state. The exact intervening count isn't
+reconstructed here since several docs-only and bugfix commits landed between this batch
+and Addendum 2 without each itemizing a running total; 307 is the next verified figure,
+in Addendum 2 below), all passing.
 
 **memory — provenance, consolidation, decay, an external notes bridge**
 - `Observation` gains an optional `evidence: {overlap, matchedTool?}` field, stamped by
@@ -351,6 +395,11 @@ servers, and five CLIs.
   package (`@ideal-harness/*`); the published tarball ships `dist/` + hooks + skills, so
   `/plugin install` pulls working code into `${CLAUDE_PLUGIN_ROOT}` — no clone, no build,
   no committed build artifacts. Plugins install at user scope → available in every project.
+  *(Historical, accurate for v0.1.0: the monorepo flattened after this — see `DESIGN.md`'s
+  2026-08-11 historical note — into one `ideal-harness` npm package with six bins. The
+  scoped `@ideal-harness/*` package names above no longer exist; `README.md`'s install
+  instructions describe the current single-package form. `decisions.md` D022/D025 record
+  the post-flatten fixes.)*
 - Every engine plugin declares its **MCP server in `plugin.json`** (`${CLAUDE_PLUGIN_ROOT}`),
   so installing a plugin wires its tools — no manual `.mcp.json` editing.
 - `pnpm release` (build + `pnpm -r publish`) and a tag-triggered `release.yml` workflow;

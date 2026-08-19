@@ -12,6 +12,13 @@
 > no I/O — useful on its own (and via the `compress` MCP server / CLI). Phase 2 wires it to a
 > live statusline. Phase 3 makes the wiring reproducible across installs. Pick the phases that
 > fit your use case.
+>
+> **Historical note, added 2026-08-19:** this plan predates the monorepo flatten described in
+> `DESIGN.md`'s own historical note (2026-08-11) and still describes paths as
+> `packages/compress/src/…` throughout. The real, current paths are `src/compress/…` (compiled
+> to `dist/compress/`) and `hooks/statusline.mjs` at the repo root — same module boundary, same
+> design, just not a per-package `pnpm -r` workspace anymore. All three phases below are still
+> accurately **implemented**; only the path spelling is stale.
 
 ## Why
 
@@ -119,8 +126,8 @@ verified); README + CLAUDE.md carry the honest display-only note.
 
 | Step | Command |
 |---|---|
-| Build (topological) | `corepack pnpm -r run build` |
-| Tests (130 across 5 packages) | `corepack pnpm -r run test` |
+| Build (single package, post-flatten) | `corepack pnpm build` |
+| Tests (370 across the 6 modules as of 2026-08-19, was 130 across 5 packages when this table was written) | `corepack pnpm test` |
 | Substrate self-validate | `corepack pnpm validate` |
 | Lint/format | `corepack pnpm biome` |
 | Phase 2 hook smoke test | pipe fake `{"transcript_path":…,"session_id":"t"}` into `node packages/compress/hooks/statusline.mjs` |
