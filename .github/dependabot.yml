@@ -1,0 +1,19 @@
+version: 2
+
+# Keeps the pinned GitHub Actions commit SHAs (see ci.yml/release.yml) and the
+# devDependencies (this project ships zero runtime dependencies by design --
+# decisions.md D007 -- so there is nothing here but tooling) from silently
+# rotting. Dependabot proposes a PR; nothing merges without review, same as
+# every other change to this repo.
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # devDependencies only -- there is no "dependencies" key to update.
+    versioning-strategy: "increase"
