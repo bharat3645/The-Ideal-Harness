@@ -88,7 +88,7 @@
     "tree-sitter-python": "^0.25.0",
     "tree-sitter-rust": "^0.24.0",
     "tree-sitter-typescript": "^0.23.2",
-    "typescript": "^5.9.3",
+    "typescript": "^7.0.2",
     "web-tree-sitter": "^0.26.12",
     "ws": "^8.21.3"
   }
