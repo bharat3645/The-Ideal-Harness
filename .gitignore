@@ -15,3 +15,7 @@ coverage/
 
 # User-local Claude Code settings (statusline wiring; scripts/setup.mjs regenerates it).
 .claude/settings.local.json
+
+# Claude Code's own runtime lock for scheduled tasks (per-machine, per-session PID/timestamp
+# state) -- was accidentally committed in the initial commit; never project data.
+.claude/scheduled_tasks.lock

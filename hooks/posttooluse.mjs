@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 /**
  * PostToolUse hook — scrub every tool result below the model.
  *
@@ -9,6 +10,21 @@
  * (silent, original output preserved) on any error — a broken scrubber must
  * never block a tool result.
  *
+ * After scrubbing, also auto-compresses large results via the same
+ * `compressToolResult` engine `ideal-harness-compress`'s MCP tool already
+ * exposes manually (issue #3). Compression runs on the ALREADY-redacted
+ * text, never the raw one, so a secret can never survive into a compressed
+ * sample. **Not CCR-recoverable**: `compressToolResult(text)` is called here
+ * without a `CcrStore`, deliberately — a hook script is a fresh Node process
+ * on every single tool call, so any store built here would be garbage
+ * collected before the `compress` MCP server's own `ccr_retrieve` tool
+ * (a different, long-lived process) could ever see it. Making this
+ * recoverable would mean disk-backing CCR, which `decisions.md` D035
+ * rejected on purpose. If recoverability matters for a given call, use the
+ * `compress` MCP tool directly instead — it holds a real, live `CcrStore`.
+ * Kill switch: `IDEAL_HARNESS_AUTO_COMPRESS=off` (redaction/fencing above
+ * are unaffected).
+ *
  * Also runs the two Design & Taste checks — see `src/guard/design.ts`: the
  * opt-in hex-color-vs-token-file check, and the on-by-default (kill switch
  * `IDEAL_HARNESS_DESIGN_LINT=off`) reduced-motion accessibility check. Both
@@ -18,6 +34,7 @@
  * a flag, not a floor.
  */
 
+import { compressToolResult } from '../dist/compress/index.js';
 import { checkDesignTokens, checkReducedMotion, scrubToolOutput } from '../dist/guard/index.js';
 
 function designLintWarnings(tool, input) {
@@ -53,6 +70,19 @@ function designLintWarnings(tool, input) {
   return warnings;
 }
 
+/** Compress already-scrubbed text, never the raw one. Fails open: any error leaves output untouched. */
+function autoCompress(text) {
+  if (process.env.IDEAL_HARNESS_AUTO_COMPRESS?.trim().toLowerCase() === 'off') {
+    return null;
+  }
+  try {
+    const result = compressToolResult(text);
+    return result.method === 'none' ? null : result;
+  } catch {
+    return null;
+  }
+}
+
 async function readStdin() {
   const chunks = [];
   for await (const chunk of process.stdin) {
@@ -75,9 +105,19 @@ async function main() {
   const { output, changed, warnings } = scrubToolOutput(text, { tool });
   const allWarnings = [...warnings, ...designLintWarnings(tool, input)];
 
+  // Compress the scrubbed (redacted/fenced) text, not the raw one — a secret
+  // must never survive into a compressed sample.
+  const compression = isString ? autoCompress(output) : null;
+  const finalOutput = compression !== null ? compression.text : output;
+  if (compression !== null) {
+    allWarnings.push(
+      `auto-compressed via ${compression.method} (${compression.originalTokens} -> ${compression.compressedTokens} tokens, not CCR-recoverable from this hook — see module doc)`,
+    );
+  }
+
   const hookSpecificOutput = { hookEventName: 'PostToolUse' };
-  if (changed && isString) {
-    hookSpecificOutput.updatedToolOutput = output;
+  if ((changed || compression !== null) && isString) {
+    hookSpecificOutput.updatedToolOutput = finalOutput;
   }
   if (allWarnings.length > 0) {
     hookSpecificOutput.additionalContext = allWarnings.map((w) => `WARNING: ${w}`).join('\n');

@@ -20,6 +20,8 @@ import { test } from 'node:test';
 import { evaluate, navigate, screenshot, snapshot } from '../../../src/web/browse/actions.js';
 import { connectCdp } from '../../../src/web/browse/cdp.js';
 import {
+  type EnsureDaemonOptions,
+  type EnsureDaemonResult,
   ensureDaemon,
   findChromeExecutable,
   isProcessAlive,
@@ -29,6 +31,25 @@ import {
 
 const chromeAvailable = findChromeExecutable() !== null;
 
+/**
+ * A cold Chrome launch on shared CI runner infrastructure has genuine,
+ * observed variance (see `daemon.ts`'s own `startupTimeoutMs` comment —
+ * this budget was already widened once, 15s -> 30s, from a real CI
+ * failure, and still isn't 100% reliable). A fixed timeout will always
+ * eventually lose to that variance, so retry the spawn itself once on a
+ * startup timeout specifically, rather than widen the budget again.
+ * `ensureDaemon` already cleans up fully (kills the watchdog, removes the
+ * temp profile dir) before returning `ok: false`, so a retry starts from
+ * a genuinely clean slate.
+ */
+async function ensureDaemonResilient(options: EnsureDaemonOptions): Promise<EnsureDaemonResult> {
+  const first = await ensureDaemon(options);
+  if (first.ok) {
+    return first;
+  }
+  return ensureDaemon(options);
+}
+
 test('browse: full session against real Chrome (spawn, navigate, snapshot, screenshot, evaluate, shutdown)', async (t) => {
   if (!chromeAvailable) {
     t.skip('no Chrome/Chromium/Edge found in this environment — set CHROME_PATH to run this test');
@@ -36,8 +57,8 @@ test('browse: full session against real Chrome (spawn, navigate, snapshot, scree
   }
   const dir = mkdtempSync(join(tmpdir(), 'ih-browse-it-'));
   try {
-    const result = await ensureDaemon({ cwd: dir, idleMs: 60_000 });
-    assert.equal(result.ok, true, result.error);
+    const result = await ensureDaemonResilient({ cwd: dir, idleMs: 60_000 });
+    assert.equal(result.ok, true, result.error ?? 'ensureDaemon failed');
     assert.ok(result.state);
     assert.ok(isProcessAlive(result.state.chromePid));
 
@@ -77,7 +98,7 @@ test('browse: a second ensureDaemon call reuses the same warm daemon instead of 
   }
   const dir = mkdtempSync(join(tmpdir(), 'ih-browse-it-'));
   try {
-    const first = await ensureDaemon({ cwd: dir, idleMs: 60_000 });
+    const first = await ensureDaemonResilient({ cwd: dir, idleMs: 60_000 });
     assert.equal(first.ok, true);
     const second = await ensureDaemon({ cwd: dir, idleMs: 60_000 });
     assert.equal(second.ok, true);
@@ -96,8 +117,8 @@ test('browse: the watchdog genuinely self-terminates on idle — not lazy-reap-o
   const dir = mkdtempSync(join(tmpdir(), 'ih-browse-it-'));
   try {
     // Fast poll interval so this test doesn't have to wait out a real 15s cycle.
-    const result = await ensureDaemon({ cwd: dir, idleMs: 300, pollIntervalMs: 500 });
-    assert.equal(result.ok, true, result.error);
+    const result = await ensureDaemonResilient({ cwd: dir, idleMs: 300, pollIntervalMs: 500 });
+    assert.equal(result.ok, true, result.error ?? 'ensureDaemon failed');
     assert.ok(result.state);
     assert.ok(isProcessAlive(result.state.chromePid));
 

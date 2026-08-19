@@ -7,6 +7,25 @@
  * manual approval ('ask') on any internal error — a broken gate must never
  * silently allow.
  *
+ * When a `Bash` call is actually going to run (the final decision is
+ * `allow`, on macOS/Linux, with the platform's sandbox tool present), the
+ * command is auto-wrapped in the same OS sandbox `ledger_verify` already
+ * applies manually (`src/guard/sandbox.ts`'s `buildSandboxCommand`), via the
+ * `updatedInput` contract — so sandboxing "just happens" for whatever
+ * already reached `allow`, instead of requiring a caller to remember to
+ * invoke it (issue #4). Deliberately narrow in scope: no extra writable
+ * paths beyond the working directory, network access OFF by default. This
+ * is safe specifically because of what actually reaches `allow` under the
+ * default floor — mostly read-only git (`git status|log|diff`) — commands
+ * that never needed network in the first place; an operator who has added a
+ * broader custom allow rule via `ideal-harness.policy.json` should be aware
+ * this now sandboxes those calls too, no-network by default, and that a
+ * command that genuinely needs network will fail loudly under the sandbox
+ * rather than silently misbehave. Kill switch: `IDEAL_HARNESS_AUTO_SANDBOX=off`.
+ * Also applied under `bypass` mode, matching PostToolUse's own "hygiene
+ * stays on even when the permission floor is waived" precedent — bypass
+ * relaxes the permission decision, not the safety nets around it.
+ *
  * Operator knobs (all human-owned; the model can set none of them):
  *   - floor mode: soft (DEFAULT: deny → ask, the human decides) | enforce
  *     (hard denies, via IDEAL_HARNESS_FLOOR_MODE=enforce) | bypass (allow-all,
@@ -24,6 +43,7 @@ import {
   appendJournalEntry,
   applyFloorMode,
   buildJournalEntry,
+  buildSandboxCommand,
   consumeLeaseIfDecided,
   evaluateTiered,
   FLOOR_MODE_ENV_VAR,
@@ -31,6 +51,7 @@ import {
   looksLikeInjection,
   redactSecrets,
   resolveOperatorTiers,
+  sandboxToolAvailable,
   subjectFor,
 } from '../dist/guard/index.js';
 
@@ -38,16 +59,16 @@ const EGRESS_TOOLS = new Set(['Bash', 'WebFetch', 'Write', 'Edit', 'NotebookEdit
 
 const KNOB_HINT = 'operator knobs: IDEAL_HARNESS_FLOOR_MODE=soft|bypass, or ideal-harness.policy.json';
 
-function emit(decision, reason) {
-  process.stdout.write(
-    JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        permissionDecision: decision,
-        permissionDecisionReason: reason,
-      },
-    }),
-  );
+function emit(decision, reason, updatedInput) {
+  const hookSpecificOutput = {
+    hookEventName: 'PreToolUse',
+    permissionDecision: decision,
+    permissionDecisionReason: reason,
+  };
+  if (updatedInput !== undefined) {
+    hookSpecificOutput.updatedInput = updatedInput;
+  }
+  process.stdout.write(JSON.stringify({ hookSpecificOutput }));
 }
 
 function warn(message) {
@@ -56,6 +77,40 @@ function warn(message) {
 
 function journal(tool, subject, decision, mode, softened) {
   appendJournalEntry(buildJournalEntry({ ts: new Date().toISOString(), tool, subject, decision, mode, softened }));
+}
+
+/** POSIX shell single-quote escaping — safe for any argv element, including one
+ *  containing embedded single quotes, spaces, or shell metacharacters. */
+function shellQuoteArgv(argv) {
+  return argv.map((arg) => `'${String(arg).replace(/'/g, "'\\''")}'`).join(' ');
+}
+
+function detectPlatform() {
+  if (process.platform === 'darwin') return 'darwin';
+  if (process.platform === 'linux') return 'linux';
+  return 'other';
+}
+
+/** Wrap a Bash command's argv in the OS sandbox, if one is available on this platform.
+ *  Returns null (no wrap) rather than throwing — a broken/absent sandbox tool must
+ *  never block a call that already passed policy; it just runs unsandboxed. */
+function autoSandboxCommand(command) {
+  if (process.env.IDEAL_HARNESS_AUTO_SANDBOX?.trim().toLowerCase() === 'off') {
+    return null;
+  }
+  const platform = detectPlatform();
+  if (platform === 'other') {
+    return null;
+  }
+  try {
+    const built = buildSandboxCommand(['/bin/sh', '-c', command], platform, { workdir: process.cwd() });
+    if (!built.ok || !sandboxToolAvailable(built.argv[0])) {
+      return null;
+    }
+    return shellQuoteArgv(built.argv);
+  } catch {
+    return null;
+  }
 }
 
 async function readStdin() {
@@ -88,7 +143,14 @@ async function main() {
       reason: 'dangerously-skip-permissions active: harness permission floor waived by operator',
     };
     journal(tool, subject, decision, mode);
-    emit(decision.action, decision.reason);
+    let bypassUpdatedInput;
+    if (tool === 'Bash' && typeof input.command === 'string') {
+      const wrapped = autoSandboxCommand(input.command);
+      if (wrapped !== null) {
+        bypassUpdatedInput = { ...input, command: wrapped };
+      }
+    }
+    emit(decision.action, decision.reason, bypassUpdatedInput);
     return;
   }
 
@@ -148,7 +210,19 @@ async function main() {
   }
 
   journal(tool, subject, { ...applied, reason }, mode, softened);
-  emit(applied.action, reason);
+
+  // Only a call that is ACTUALLY going to run (final decision: allow) gets
+  // wrapped — never for ask/deny, and never ahead of the injection-cue check
+  // above, which can still escalate an allow to ask.
+  let updatedInput;
+  if (applied.action === 'allow' && tool === 'Bash' && typeof input.command === 'string') {
+    const wrapped = autoSandboxCommand(input.command);
+    if (wrapped !== null) {
+      updatedInput = { ...input, command: wrapped };
+    }
+  }
+
+  emit(applied.action, reason, updatedInput);
 }
 
 main().catch((error) => {
