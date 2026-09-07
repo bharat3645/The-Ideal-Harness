@@ -150,3 +150,103 @@ malicious-skill sample was blocked identically (high severity, 2 findings).
 files on a real TS/JS codebase parsed structurally, not regex-approximated), on a second,
 independently-verifiable target, with one unflattering result stated as plainly as the good
 ones — per this project's own honesty rule.
+
+## Addendum (2026-09-07) — public, pinned, third-party corpus
+
+Both runs above use targets only this development environment can see (an external private
+worker, or this repo's own source), so nobody outside could reproduce the exact numbers —
+the gap [issue #8](https://github.com/bharat3645/The-Ideal-Harness/issues/8) named. This
+addendum fixes that: the corpus is a public, MIT-licensed, third-party TypeScript codebase
+pinned to an exact commit, fetched and benchmarked with one command anyone can run.
+
+```bash
+pnpm build                     # once, if dist/ isn't already built
+bash bench/run-public-corpus.sh
+```
+
+The script clones [`colinhacks/zod`](https://github.com/colinhacks/zod) at tag `v3.25.76`
+(commit `463f03eb8183dcdcdf735b180f2bf40883e66220`) into `.bench-corpus/` and refuses to run
+if the checkout doesn't land on that exact commit — the corpus can't silently drift out from
+under the published numbers. Zod was picked because it's popular, permissively licensed
+(MIT), and large enough to be a meaningful independent target without being unwieldy.
+
+| | |
+|---|---|
+| Corpus | [`colinhacks/zod`](https://github.com/colinhacks/zod) @ `v3.25.76`, commit `463f03eb8183dcdcdf735b180f2bf40883e66220` |
+| Indexed source | `packages/zod/src` — **241 files, 53,343 LOC** |
+| Index time | **1,178 ms** (cold, includes tree-sitter WASM parse) |
+| Symbols extracted | **6,296** |
+| Extraction tier | **241/241 files at tree-sitter tier, 0 at regex fallback** |
+| Secret-scan scope | `packages/zod` (whole package) — **248 text files** |
+
+**Memory — retrieval reduction**, same three fixed queries as both runs above (the queries
+are part of the benchmark script, not chosen per-target):
+
+| Query | Symbols returned | Files pointed at | Subgraph tokens | Naive read tokens | Reduction |
+|---|---|---|---|---|---|
+| "policy evaluate deny rule" | 0 | 0 | 11 | 0 | **n/a** |
+| "agent execution session" | 0 | 0 | 10 | 0 | **n/a** |
+| "compress tool result token" | 94 | 6 | 1,993 | 7,073 | **3.5×** |
+
+**Unflattering, reported plainly:** two of three queries return **zero** matches on zod's
+source. This is the same vocabulary-overlap limitation the 2026-08-11 addendum found on this
+repo's own code, now confirmed on a fully independent, much larger codebase: "policy
+evaluate deny rule" and "agent execution session" are vocabulary specific to *this* harness's
+own domain (policy engines, agent sessions) and simply don't occur as symbol-name substrings
+in a validation library. Only the third query, whose words ("compress", "tool", "result",
+"token") happen to overlap generic programming vocabulary, scores — and even then at 3.5×,
+well below the 6.5–18.8× range seen on the harness's own, vocabulary-matched code. The honest
+takeaway: the reduction multiplier this benchmark reports is a property of query/codebase
+vocabulary overlap, not a fixed constant of the tool — a real limitation of the current
+simple term-matching scorer (no stemming/synonyms), not a target-specific fluke.
+
+**Compression**: the code-graph symbol JSON (6,296 rows) compressed 219,560 → 193 tokens
+(**99.9%**), consistent with both prior runs' json-array results.
+
+**Guard**:
+- **Secret redaction**: 248 files scanned, **2 hits in 1 file**, type `jwt`. Traced to the
+  literal source: `src/v4/mini/tests/string.test.ts`'s `test("z.jwt", ...)` embeds a real
+  JWT-shaped sample string to test zod's own `z.jwt()` validator — a test fixture, not a
+  leaked credential, same nature as both prior runs' findings.
+- **Policy engine**: the same fixed 10-request set as both prior runs (2 allow / 4 ask / 4
+  deny) — this part of the benchmark is a synthetic request list built into the script, not
+  derived from the corpus, so it is expected to reproduce identically across targets and is
+  reported here for completeness, not as a corpus-specific result.
+- **Drift-guard**: verified 3 real symbols from zod's own source (`allKeys`,
+  `inferFlattenedErrors`, `typeToFlattenedError`) as present, and the fabricated
+  `zzNonexistentSymbolXyz` as correctly not hard-blocked (grep cannot prove absence) —
+  identical behavior to both prior runs, now on code the harness has never seen before.
+- **Hidden-character scan**: **4,070 hits**, the largest of the three runs and worth tracing
+  rather than just reporting — traced to source, none are adversarial:
+  - **2,774 zero-width joiners + 6 zero-width non-joiners** (codepoints U+200D/U+200C), found
+    in `src/v3/tests/string.test.ts` and its `src/v4/classic/tests/string.test.ts` copy
+    (1,387 each) — these are the multi-codepoint emoji sequences (flags, family/profession
+    emoji) in zod's own `z.emoji()` regex test fixtures. ZWJ is exactly the character this
+    scanner is designed to catch when it's used to *hide* content, but here it's doing its
+    normal, visible job of joining an emoji glyph.
+  - **1,290 Cyrillic letters that are homoglyphs of Latin lookalikes** (а/е/о/р/с/і/х —
+    U+0430, U+0435, U+043E, U+0440, U+0441, U+0456, U+0445), concentrated in
+    `src/v4/locales/{ru,ua,mk}.ts` — Russian, Ukrainian and Macedonian error-message
+    translation strings. Real Cyrillic text in real locale files, not obfuscation.
+
+  **Same instrument, different context.** The scanner's job — flag zero-width joins and
+  Latin/Cyrillic-homoglyph-shaped characters, the exact primitives an IDN-homograph or
+  hidden-instruction attack would use — did its job correctly on both counts: every flagged
+  character really is a ZWJ or a homoglyph. What it cannot do on its own is tell "legitimate
+  emoji test fixture" and "legitimate i18n locale file" apart from "adversarial use of the
+  same codepoints" — that call needs a human (or a project-specific allowlist), which is
+  exactly why this scanner is a flag-for-review tool, not an auto-block gate, unlike the
+  policy engine's deny rules above. Zero hits on the harness's own two prior targets meant
+  this distinction was never actually exercised until this run.
+- **Malicious-skill vet**: blocked identically to both prior runs (high severity, 2
+  findings) — the sample is a fixed synthetic payload built into the script, not derived
+  from the corpus.
+
+**What this addendum adds:** the thing #8 asked for — a corpus anyone can fetch and verify
+against these exact numbers, with the pin enforced by the script itself rather than by
+convention. It also surfaces the harness's most substantive unflattering result yet: on an
+independent, real-world codebase, two of three retrieval queries return nothing, and the
+hidden-character scanner — correctly, per its own narrow definition — flags 4,070 characters
+that are not attacks. Both are reported here in full rather than swapped for friendlier
+queries or a quieter target, per this project's own rule that a zero-match query or a
+loud-but-benign scan result is a finding, not a failure to hide.
