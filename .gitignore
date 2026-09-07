@@ -13,6 +13,9 @@ coverage/
 # Per-project memory store (project-local by design; never committed).
 .ideal-harness/
 
+# Pinned public benchmark corpus, fetched on demand by bench/run-public-corpus.sh.
+.bench-corpus/
+
 # User-local Claude Code settings (statusline wiring; scripts/setup.mjs regenerates it).
 .claude/settings.local.json
 
