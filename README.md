@@ -257,6 +257,9 @@ npx -y -p ideal-harness ideal-harness-web mcp          # web_fetch + web_docs, p
 
 Point a Tier-2 host (Cursor / Cline / Codex / Gemini) at the MCP servers, or call the CLIs directly to invoke policy checks, sandboxing, and skill vetting yourself.
 
+> **Host-specific Setup Notes:**
+> - [Gemini (Antigravity)](docs/setup-gemini.md)
+
 > **Publish-freshness note, stated honestly:** the currently-published `ideal-harness`
 > npm package predates this document's `web` module and most of the `guard`/`memory`/
 > `orchestrate` capabilities described above (leases, hash-chained journal, team policy,
