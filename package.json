@@ -78,10 +78,10 @@
     "release:dry": "corepack pnpm publish --dry-run --no-git-checks"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.13",
+    "@biomejs/biome": "^2.6.7",
     "@tree-sitter-grammars/tree-sitter-kotlin": "^1.1.0",
-    "@types/node": "^26.5.1",
-    "@types/ws": "^8.18.1",
+    "@types/node": "^26.6.6",
+    "@types/ws": "^8.18.2",
     "tree-sitter-go": "^0.25.0",
     "tree-sitter-java": "^0.23.5",
     "tree-sitter-javascript": "^0.25.0",
@@ -89,7 +89,7 @@
     "tree-sitter-rust": "^0.24.0",
     "tree-sitter-typescript": "^0.23.2",
     "typescript": "^7.0.2",
-    "web-tree-sitter": "^0.27.0",
-    "ws": "^8.21.3"
+    "web-tree-sitter": "^0.27.2",
+    "ws": "^8.23.0"
   }
 }
